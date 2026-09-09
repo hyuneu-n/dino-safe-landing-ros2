@@ -1,0 +1,133 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+  <world name="city">
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>500 500</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>500 500</size></plane></geometry>
+          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 도시 건물들 -->
+    <model name="b1"><static>true</static><pose>20 20 10 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>15 20 20</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>15 20 20</size></box></geometry>
+          <material><ambient>0.8 0.3 0.2 1</ambient><diffuse>0.8 0.3 0.2 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="b2"><static>true</static><pose>-25 15 15 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>12 18 30</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>12 18 30</size></box></geometry>
+          <material><ambient>0.2 0.4 0.8 1</ambient><diffuse>0.2 0.4 0.8 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="b3"><static>true</static><pose>40 -20 8 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>20 15 16</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>20 15 16</size></box></geometry>
+          <material><ambient>0.3 0.7 0.3 1</ambient><diffuse>0.3 0.7 0.3 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="b4"><static>true</static><pose>-40 -30 12 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>18 12 24</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>18 12 24</size></box></geometry>
+          <material><ambient>0.7 0.6 0.2 1</ambient><diffuse>0.7 0.6 0.2 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="b5"><static>true</static><pose>0 -40 20 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>10 10 40</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>10 10 40</size></box></geometry>
+          <material><ambient>0.5 0.5 0.7 1</ambient><diffuse>0.5 0.5 0.7 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="b6"><static>true</static><pose>-10 50 7 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>25 15 14</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>25 15 14</size></box></geometry>
+          <material><ambient>0.6 0.3 0.5 1</ambient><diffuse>0.6 0.3 0.5 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="b7"><static>true</static><pose>60 30 6 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>14 22 12</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>14 22 12</size></box></geometry>
+          <material><ambient>0.4 0.2 0.6 1</ambient><diffuse>0.4 0.2 0.6 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="b8"><static>true</static><pose>-60 10 9 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>16 16 18</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>16 16 18</size></box></geometry>
+          <material><ambient>0.9 0.5 0.1 1</ambient><diffuse>0.9 0.5 0.1 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- 헬리패드 (착륙 목표) -->
+    <model name="helipad"><static>true</static><pose>0 0 0.05 0 0 0</pose>
+      <link name="l">
+        <visual name="v">
+          <geometry><cylinder><radius>5</radius><length>0.1</length></cylinder></geometry>
+          <material><ambient>1 1 0 1</ambient><diffuse>1 1 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 드론 (아래쪽 카메라 포함) -->
+    <model name="drone">
+      <pose>0 0 50 0 0 0</pose>
+      <link name="base_link">
+        <inertial>
+          <mass>1.5</mass>
+          <inertia><ixx>0.03</ixx><iyy>0.03</iyy><izz>0.06</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
+        </inertial>
+        <collision name="c">
+          <geometry><box><size>0.5 0.5 0.15</size></box></geometry>
+        </collision>
+        <visual name="v">
+          <geometry><box><size>0.5 0.5 0.15</size></box></geometry>
+          <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material>
+        </visual>
+
+        <!-- 아래 방향 카메라 -->
+        <sensor name="downward_camera" type="camera">
+          <pose>0 0 -0.1 0 1.5707963 0</pose>
+          <camera>
+            <horizontal_fov>1.047</horizontal_fov>
+            <image><width>640</width><height>480</height><format>R8G8B8</format></image>
+            <clip><near>0.1</near><far>500</far></clip>
+          </camera>
+          <always_on>true</always_on>
+          <update_rate>10</update_rate>
+          <visualize>false</visualize>
+          <topic>/drone/camera/image</topic>
+        </sensor>
+      </link>
+    </model>
+
+  </world>
+</sdf>

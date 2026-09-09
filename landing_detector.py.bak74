@@ -1,0 +1,323 @@
+#!/usr/bin/env python3
+"""
+landing_detector.py — 비전 기반 안전 착륙지 탐지 노드 (DINOv2 + depth, 라이다 미사용)
+
+하강 카메라 RGB + depth만으로:
+  1) DINO 패치 특징 → K-means로 표면 군집 (도로 / 차 / 건물 / 잔디 …)            [의미]
+  2) depth → 지면 거리 추정, 솟아오른 영역 = 장애물(차/사람/건물/차고지붕) 마스크   [기하: clearance]
+  3) "주 착륙 표면(포장도로)" 색과 다른 표면(잔디·물 등)은 보수적으로 제외          [의미]
+  4) safe_mask 침식(드론 footprint) → 연결요소 → 후보 영역
+  5) 점수 = w1·목적지근접 + w2·평탄도 + w3·여유공간 + w4·면적 → 최적점
+  6) 픽셀 → world 좌표 (드론 odom + 고도 + 카메라 내부파라미터)
+발행:
+  /landing/target          geometry_msgs/PointStamped     (world, 안전 착륙점)
+  /landing/target_marker   visualization_msgs/Marker      (RViz: 녹색 화살표)
+  /landing/candidates      visualization_msgs/MarkerArray (RViz: 후보 디스크, score로 색)
+  /landing/overlay         sensor_msgs/Image              (RGB + safe(녹)/obstacle(적) + 선택점(노랑))
+  /landing/dino_pca        sensor_msgs/Image              (DINO 특징 PCA 시각화)
+  + ~/safe_landing/overlay.png, dino_pca.png, down_cam.png  (rqt 없이 보기용)
+구독:
+  /drone/down_cam/image_raw          sensor_msgs/Image  (640x480 rgb8)
+  /drone/down_depth/depth/image_raw  sensor_msgs/Image  (320x240 32FC1)
+  /drone/odom                        nav_msgs/Odometry
+"""
+import math
+import os
+import numpy as np
+from PIL import Image as PImage
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Image
+from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PointStamped, Point
+from std_msgs.msg import ColorRGBA
+from visualization_msgs.msg import Marker, MarkerArray
+
+from dino_seg import DinoSeg
+
+IMG_W, IMG_H = 640, 480
+FX = (IMG_W / 2.0) / math.tan(1.396 / 2.0)         # ≈ 382
+FY = FX
+CX, CY = IMG_W / 2.0, IMG_H / 2.0
+GROUND_Z = 0.0
+TARGET_XY = np.array([74.0, 0.0])                  # GPS 거친 목적지
+DRONE_FOOTPRINT_M = 1.0                            # 안착 반경 여유 (m)
+OBSTACLE_DEPTH_MARGIN = 0.45                       # 지면거리보다 이만큼 가까우면 솟은 장애물
+GROUND_COLOR_THRESH = 70.0                         # 주 착륙표면 색과의 거리 (0~441) — 넘으면 제외
+SAVE_DIR = os.path.expanduser("~/safe_landing")
+FRAMES_DIR = os.environ.get("FRAMES_DIR", "")          # 설정되면 매 frame 번호 매겨 저장 → ffmpeg로 영상
+SAVE_FRAMES = bool(os.environ.get("SAVE_FRAMES", "")) and FRAMES_DIR
+W_NEAR, W_FLAT, W_CLEAR, W_AREA = 0.40, 0.20, 0.25, 0.15
+
+
+def img_to_np_rgb(msg):
+    a = np.frombuffer(bytes(msg.data), np.uint8).reshape(msg.height, msg.width, -1)
+    return a[:, :, :3].copy()
+
+
+def img_to_np_depth(msg):
+    return np.frombuffer(bytes(msg.data), np.float32).reshape(msg.height, msg.width).copy()
+
+
+def np_rgb_to_img(arr, frame="down_cam_link"):
+    m = Image()
+    m.height, m.width = arr.shape[:2]
+    m.encoding = "rgb8"
+    m.step = m.width * 3
+    m.data = np.ascontiguousarray(arr, np.uint8).tobytes()
+    m.header.frame_id = frame
+    return m
+
+
+class LandingDetector(Node):
+    def __init__(self):
+        super().__init__("landing_detector")
+        self.get_logger().info("DINO 로드 중...")
+        self.seg = DinoSeg(prefer="dinov2")        # DINOv3 가중치 license-gated → DINOv2 ViT-S/14
+        self.rgb = self.depth = self.odom = None
+        self.create_subscription(Image, "/drone/down_cam/image_raw", self.on_rgb, 5)
+        self.create_subscription(Image, "/drone/down_depth/depth/image_raw", self.on_depth, 5)
+        self.create_subscription(Odometry, "/drone/odom", self.on_odom, 5)
+        self.pub_target = self.create_publisher(PointStamped, "/landing/target", 10)
+        self.pub_tmark = self.create_publisher(Marker, "/landing/target_marker", 2)
+        self.pub_cands = self.create_publisher(MarkerArray, "/landing/candidates", 2)
+        self.pub_overlay = self.create_publisher(Image, "/landing/overlay", 2)
+        self.pub_pca = self.create_publisher(Image, "/landing/dino_pca", 2)
+        self.timer = self.create_timer(1.0, self.process)
+        self.get_logger().info("준비 완료. /drone/down_cam/image_raw 대기 중...")
+
+    def on_rgb(self, m): self.rgb = img_to_np_rgb(m)
+    def on_depth(self, m): self.depth = img_to_np_depth(m)
+
+    def on_odom(self, m):
+        p = m.pose.pose.position
+        self.odom = (p.x, p.y, p.z)
+
+    # 픽셀(u,v) → world(x,y). 카메라 yaw=0, -Z 바라봄, 고도 h. (Gazebo 카메라 광학프레임 매핑)
+    def pixel_to_world(self, u, v, h):
+        off_a = (CX - u) / FX * h
+        off_b = (CY - v) / FY * h
+        ox, oy, _ = self.odom
+        return ox + off_b, oy + off_a    # 부호: 실측 보정 가능
+
+    def _save_png(self, name, arr):
+        try:
+            PImage.fromarray(np.ascontiguousarray(arr, np.uint8)).save(os.path.join(SAVE_DIR, name))
+        except Exception:
+            pass
+
+    def _save_frame(self, prefix, arr):
+        """SAVE_FRAMES=1이고 FRAMES_DIR 지정되면 번호 매겨 저장 (ffmpeg로 영상 합치기용)."""
+        if not SAVE_FRAMES:
+            return
+        if not hasattr(self, "_frame_n"):
+            self._frame_n = 0
+        try:
+            PImage.fromarray(np.ascontiguousarray(arr, np.uint8)).save(
+                os.path.join(FRAMES_DIR, f"{prefix}_{self._frame_n:04d}.png"))
+        except Exception:
+            pass
+
+    def process(self):
+        if self.rgb is None or self.depth is None or self.odom is None:
+            return
+        rgb, depth = self.rgb, self.depth
+        h_alt = max(1.0, self.odom[2] - GROUND_Z)
+
+        # 1) DINO 특징 + 군집
+        feats, (hp, wp) = self.seg.extract(rgb, side=448)
+        labels_lo, _ = self.seg.kmeans(feats, k=5)
+        pca = self.seg.pca_rgb(feats)
+
+        # RGB를 패치격자로 다운샘플 (군집별 평균색)
+        rgb_lo = np.asarray(PImage.fromarray(rgb).resize((wp, hp), PImage.BILINEAR)).astype(float)
+
+        # depth를 패치격자로 (median pool)
+        dvalid = np.where(np.isfinite(depth), depth, np.nan)
+        d_lo = self._block_median(dvalid, hp, wp)
+        ground_dist = np.nanmedian(d_lo)
+        if not np.isfinite(ground_dist):
+            ground_dist = h_alt
+
+        # 2) 장애물(솟음) 마스크: 지면거리보다 충분히 가까운 패치
+        obstacle_lo = (ground_dist - np.nan_to_num(d_lo, nan=ground_dist)) > OBSTACLE_DEPTH_MARGIN
+
+        # 3) 평지+지면 군집 후보 → 그 중 가장 넓은 것 = 주 착륙표면, 색이 비슷한 평지군집만 safe
+        flat_ground = {}
+        for c in range(5):
+            m = labels_lo == c
+            if m.sum() < 4:
+                continue
+            obst_frac = obstacle_lo[m].mean()
+            d_dev = np.nanstd(d_lo[m]) if np.isfinite(np.nanstd(d_lo[m])) else 9.9
+            if obst_frac < 0.25 and d_dev < 0.6:
+                flat_ground[c] = (m.sum(), rgb_lo[m].mean(0))
+        safe_lo = np.zeros((hp, wp), bool)
+        if flat_ground:
+            primary = max(flat_ground, key=lambda c: flat_ground[c][0])
+            pcol = flat_ground[primary][1]
+            for c, (sz, col) in flat_ground.items():
+                if np.linalg.norm(col - pcol) <= GROUND_COLOR_THRESH:
+                    safe_lo[labels_lo == c] = True
+        safe_lo &= ~obstacle_lo
+
+        # 패치 → 이미지 해상도 업샘플
+        def up(a):
+            return np.asarray(PImage.fromarray(a.astype(np.uint8)).resize((IMG_W, IMG_H), PImage.NEAREST)) > 0
+        safe, obst = up(safe_lo), up(obstacle_lo)
+
+        # 4) 침식 → 연결요소 (저고도에선 FOV가 좁아 footprint 침식이 과해지므로 상한)
+        m_per_px = (2.0 * h_alt * math.tan(1.396 / 2.0)) / IMG_W
+        rad_px = max(2, min(int(DRONE_FOOTPRINT_M / max(m_per_px, 1e-3)), IMG_W // 8))
+        comps = self._connected_components(self._erode(safe, rad_px))
+
+        cands = []   # (score, u, v, wx, wy)
+        for (cu, cv, area_px) in comps:
+            if area_px < math.pi * rad_px * rad_px:
+                continue
+            wx, wy = self.pixel_to_world(cu, cv, h_alt)
+            near = math.exp(-np.linalg.norm(np.array([wx, wy]) - TARGET_XY) / 6.0)
+            lu, lv = int(cu * wp / IMG_W), int(cv * hp / IMG_H)
+            ld = d_lo[max(0, lv - 2):lv + 3, max(0, lu - 2):lu + 3]
+            sd = np.nanstd(ld)
+            flat = 1.0 / (1.0 + (sd if np.isfinite(sd) else 1.0))
+            clear = min(1.0, area_px / (math.pi * (3 * rad_px) ** 2))
+            area_n = min(1.0, area_px / (IMG_W * IMG_H * 0.15))
+            score = W_NEAR * near + W_FLAT * flat + W_CLEAR * clear + W_AREA * area_n
+            cands.append((score, cu, cv, wx, wy))
+        cands.sort(reverse=True)
+        best = cands[0] if cands else None
+
+        # 5) overlay (틴트는 옅게 — 텍스처가 비치게)
+        ov = rgb.copy()
+        ov[obst] = (0.62 * ov[obst] + np.array([255, 45, 45]) * 0.38).astype(np.uint8)
+        ov[safe] = (0.62 * ov[safe] + np.array([35, 235, 95]) * 0.38).astype(np.uint8)
+        for i, (sc, cu, cv, wx, wy) in enumerate(cands):
+            col = (255, 220, 30) if i == 0 else (60, 200, 255)
+            self._draw_circle(ov, cu, cv, 16 if i == 0 else 9, col)
+            if i == 0:
+                self._draw_circle(ov, cu, cv, 4, col, fill=True)
+        self.pub_overlay.publish(np_rgb_to_img(ov))
+        pca_full = np.asarray(PImage.fromarray(pca).resize((IMG_W, IMG_H), PImage.NEAREST))
+        self.pub_pca.publish(np_rgb_to_img(pca_full))
+        self._save_png("overlay.png", ov)
+        self._save_png("dino_pca.png", pca_full)
+        self._save_png("down_cam.png", rgb)
+        # 영상 합치기용 번호 매김 프레임 (run_demo.sh가 SAVE_FRAMES=1 + FRAMES_DIR 세팅)
+        self._save_frame("overlay", ov)
+        self._save_frame("pca", pca_full)
+        self._save_frame("downcam", rgb)
+        if hasattr(self, "_frame_n"):
+            self._frame_n += 1
+        else:
+            self._frame_n = 1
+
+        # 6) markers
+        ma = MarkerArray()
+        for i, (sc, cu, cv, wx, wy) in enumerate(cands):
+            mk = Marker()
+            mk.header.frame_id = "world"
+            mk.header.stamp = self.get_clock().now().to_msg()
+            mk.ns = "cand"; mk.id = i; mk.type = Marker.CYLINDER; mk.action = Marker.ADD
+            mk.pose.position.x, mk.pose.position.y, mk.pose.position.z = float(wx), float(wy), 0.1
+            mk.pose.orientation.w = 1.0
+            mk.scale.x = mk.scale.y = 2.0; mk.scale.z = 0.15
+            g = float(np.clip(sc, 0, 1))
+            mk.color = ColorRGBA(r=1.0 - g, g=g, b=0.1, a=0.55)
+            ma.markers.append(mk)
+        # 안 쓰는 id 정리
+        for i in range(len(cands), 20):
+            mk = Marker(); mk.header.frame_id = "world"; mk.ns = "cand"; mk.id = i; mk.action = Marker.DELETE
+            ma.markers.append(mk)
+        self.pub_cands.publish(ma)
+
+        if best is not None:
+            _, cu, cv, wx, wy = best
+            self.get_logger().info(
+                f"후보 {len(cands)}개 | 선택 px=({cu:.0f},{cv:.0f}) → world=({wx:+.1f},{wy:+.1f}) "
+                f"score={best[0]:.2f} | ground_dist={ground_dist:.1f}m alt={h_alt:.1f}m")
+        else:
+            # 후보 없음(보통 저고도 — FOV 좁음): 카메라 정중앙(=드론 바로 아래)을 목표로 (이미 commit 가정)
+            wx, wy = self.pixel_to_world(CX, CY, h_alt)
+            cu, cv = int(CX), int(CY)
+            if h_alt > 4.5:
+                self.get_logger().warn("안전 착륙 후보 없음 — 중앙 하강 가정")
+        ps = PointStamped()
+        ps.header.frame_id = "world"; ps.header.stamp = self.get_clock().now().to_msg()
+        ps.point.x, ps.point.y, ps.point.z = float(wx), float(wy), GROUND_Z + 0.30
+        self.pub_target.publish(ps)
+        tm = Marker()
+        tm.header.frame_id = "world"; tm.header.stamp = ps.header.stamp
+        tm.ns = "target"; tm.id = 0; tm.type = Marker.ARROW; tm.action = Marker.ADD
+        tm.points = [Point(x=float(wx), y=float(wy), z=4.0), Point(x=float(wx), y=float(wy), z=0.2)]
+        tm.scale.x = 0.3; tm.scale.y = 0.7; tm.scale.z = 0.7
+        tm.color = ColorRGBA(r=0.1, g=1.0, b=0.2, a=0.95)
+        self.pub_tmark.publish(tm)
+
+    # ---------- 헬퍼 (numpy만) ----------
+    @staticmethod
+    def _block_median(a, hp, wp):
+        H, W = a.shape
+        ys = np.linspace(0, H, hp + 1).astype(int)
+        xs = np.linspace(0, W, wp + 1).astype(int)
+        out = np.full((hp, wp), np.nan)
+        for i in range(hp):
+            for j in range(wp):
+                blk = a[ys[i]:ys[i + 1], xs[j]:xs[j + 1]]
+                if np.isfinite(blk).any():
+                    out[i, j] = np.nanmedian(blk)
+        return out
+
+    @staticmethod
+    def _erode(mask, r):
+        if r <= 0:
+            return mask.copy()
+        from numpy.lib.stride_tricks import sliding_window_view as swv
+        m = mask.astype(np.uint8)
+        m = swv(np.pad(m, ((0, 0), (r, r))), 2 * r + 1, axis=1).min(-1)
+        m = swv(np.pad(m, ((r, r), (0, 0))), 2 * r + 1, axis=0).min(-1)
+        return m.astype(bool)
+
+    @staticmethod
+    def _connected_components(mask):
+        from collections import deque
+        H, W = mask.shape
+        lab = np.zeros((H, W), np.int32)
+        out, cur = [], 0
+        ys_, xs_ = np.where(mask)
+        for y, x in zip(ys_, xs_):
+            if lab[y, x]:
+                continue
+            cur += 1; q = deque([(y, x)]); lab[y, x] = cur
+            sx = sy = n = 0
+            while q:
+                cy, cx = q.popleft(); sx += cx; sy += cy; n += 1
+                for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    ny, nx = cy + dy, cx + dx
+                    if 0 <= ny < H and 0 <= nx < W and mask[ny, nx] and not lab[ny, nx]:
+                        lab[ny, nx] = cur; q.append((ny, nx))
+            out.append((sx / n, sy / n, n))
+        return out
+
+    @staticmethod
+    def _draw_circle(img, cu, cv, r, color, fill=False):
+        H, W = img.shape[:2]
+        yy, xx = np.ogrid[:H, :W]
+        d2 = (xx - cu) ** 2 + (yy - cv) ** 2
+        ring = d2 <= r * r if fill else (np.abs(np.sqrt(d2) - r) < 1.6)
+        img[ring] = color
+
+
+def main():
+    rclpy.init()
+    node = LandingDetector()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,265 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <world name="residential_delivery">
+
+    <include><uri>model://sun</uri></include>
+    <include><uri>model://ground_plane</uri></include>
+
+    <scene><ambient>0.6 0.6 0.6 1</ambient><background>0.7 0.85 0.95 1</background><shadows>false</shadows></scene>
+    <physics type="ode"><max_step_size>0.004</max_step_size><real_time_factor>1.0</real_time_factor><real_time_update_rate>250</real_time_update_rate></physics>
+    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so"><ros><namespace>/gazebo</namespace></ros><update_rate>50.0</update_rate></plugin>
+
+    <gui><camera name="user_camera"><pose>-160 0 18 0 0.45 0</pose>
+      <track_visual><name>delivery_drone</name><static>false</static><use_model_frame>true</use_model_frame><xyz>-10 0 5</xyz><inherit_yaw>true</inherit_yaw></track_visual></camera></gui>
+
+    <!-- ════════ 전 구간 도로 + 중앙선 (드론 비행축 시각화) ════════ -->
+    <model name="road"><static>true</static><pose>15 0 0.005 0 0 0</pose><link name="l">
+      <visual name="v"><geometry><box><size>340 10 0.02</size></box></geometry><material><ambient>0.28 0.28 0.30 1</ambient><diffuse>0.30 0.30 0.32 1</diffuse></material></visual></link></model>
+    <model name="centerline"><static>true</static><pose>15 0 0.02 0 0 0</pose><link name="l">
+      <visual name="v"><geometry><box><size>340 0.18 0.01</size></box></geometry><material><ambient>0.9 0.85 0.3 1</ambient></material></visual></link></model>
+
+    <!-- ════════════ ① 외곽 주택가 (x: -150 → -100) — Fuel House ════════════ -->
+    <include><name>h_a1</name><uri>model://House 1</uri><pose>-145 14 0 0 0 0</pose></include>
+    <include><name>h_a2</name><uri>model://House 3</uri><pose>-145 -14 0 0 0 3.1416</pose></include>
+    <include><name>h_a3</name><uri>model://House 3</uri><pose>-120 14 0 0 0 0</pose></include>
+    <include><name>h_a4</name><uri>model://House 1</uri><pose>-120 -14 0 0 0 3.1416</pose></include>
+    <include><name>h_a5</name><uri>model://House 1</uri><pose>-100 14 0 0 0 0</pose></include>
+    <include><name>h_a6</name><uri>model://House 3</uri><pose>-100 -14 0 0 0 3.1416</pose></include>
+    <include><name>t_a1</name><uri>model://Pine Tree</uri><pose>-135 8 0 0 0 0</pose></include>
+    <include><name>t_a2</name><uri>model://Oak tree</uri><pose>-110 -8 0 0 0 0</pose></include>
+    <include><name>lp_a1</name><uri>model://Lamp Post</uri><pose>-130 5 0 0 0 0</pose></include>
+    <include><name>car_a1</name><uri>model://Hatchback</uri><pose>-115 5 0 0 0 0</pose></include>
+
+    <!-- ════════════ ② 중밀도 주거 + 저층 빌딩 (x: -90 → -25) ════════════ -->
+    <include><name>h_b1</name><uri>model://House 1</uri><pose>-80 14 0 0 0 0</pose></include>
+    <include><name>h_b2</name><uri>model://House 3</uri><pose>-80 -14 0 0 0 3.1416</pose></include>
+    <!-- 4층짜리 박스 빌딩들 -->
+    <model name="midb_1"><static>true</static><pose>-60 13 7 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>10 8 14</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>10 8 14</size></box></geometry><material><ambient>0.65 0.5 0.4 1</ambient><diffuse>0.7 0.55 0.42 1</diffuse></material></visual></link></model>
+    <model name="midb_2"><static>true</static><pose>-60 -13 7 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>10 8 14</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>10 8 14</size></box></geometry><material><ambient>0.55 0.55 0.5 1</ambient><diffuse>0.6 0.6 0.55 1</diffuse></material></visual></link></model>
+    <model name="midb_3"><static>true</static><pose>-40 13 9 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>11 9 18</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>11 9 18</size></box></geometry>
+        <material><script><uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Bricks</name></script>
+          <ambient>0.6 0.42 0.32 1</ambient><diffuse>0.65 0.46 0.34 1</diffuse></material></visual></link></model>
+    <model name="midb_4"><static>true</static><pose>-40 -13 9 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>11 9 18</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>11 9 18</size></box></geometry>
+        <material><script><uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Bricks</name></script>
+          <ambient>0.5 0.5 0.55 1</ambient><diffuse>0.55 0.55 0.6 1</diffuse></material></visual></link></model>
+    <include><name>t_b1</name><uri>model://Oak tree</uri><pose>-65 6 0 0 0 0</pose></include>
+    <include><name>lp_b1</name><uri>model://Lamp Post</uri><pose>-50 -5 0 0 0 0</pose></include>
+    <include><name>car_b1</name><uri>model://Pickup</uri><pose>-50 6 0 0 0 0</pose></include>
+
+    <!-- ════════════ ③ 다운타운 협곡 (x: -15 → +95) — 박스 타워 ════════════ -->
+    <!-- 진입 빌딩 (양쪽 가드) -->
+    <model name="t_enter_l"><static>true</static><pose>-10 14 12 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>10 8 24</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>10 8 24</size></box></geometry><material><ambient>0.42 0.42 0.48 1</ambient><diffuse>0.45 0.45 0.5 1</diffuse></material></visual></link></model>
+    <model name="t_enter_r"><static>true</static><pose>-10 -14 12 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>10 8 24</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>10 8 24</size></box></geometry><material><ambient>0.48 0.48 0.52 1</ambient><diffuse>0.5 0.5 0.55 1</diffuse></material></visual></link></model>
+
+    <!-- ⭐ SWERVE 포인트 #1 (x=20): tower가 y=0 막음 → 드론 좌/우 선택. 창문 줄 추가 -->
+    <model name="t_swerve1"><static>true</static><pose>20 0 22 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>8 8 44</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>8 8 44</size></box></geometry><material><ambient>0.55 0.55 0.6 1</ambient><diffuse>0.58 0.58 0.62 1</diffuse></material></visual>
+      <visual name="f1"><pose>0 0 -16 0 0 0</pose><geometry><box><size>8.05 8.05 0.6</size></box></geometry><material><ambient>0.15 0.18 0.25 1</ambient><diffuse>0.2 0.25 0.35 1</diffuse></material></visual>
+      <visual name="f2"><pose>0 0 -8 0 0 0</pose><geometry><box><size>8.05 8.05 0.6</size></box></geometry><material><ambient>0.15 0.18 0.25 1</ambient><diffuse>0.2 0.25 0.35 1</diffuse></material></visual>
+      <visual name="f3"><pose>0 0 0 0 0 0</pose><geometry><box><size>8.05 8.05 0.6</size></box></geometry><material><ambient>0.15 0.18 0.25 1</ambient><diffuse>0.2 0.25 0.35 1</diffuse></material></visual>
+      <visual name="f4"><pose>0 0 8 0 0 0</pose><geometry><box><size>8.05 8.05 0.6</size></box></geometry><material><ambient>0.15 0.18 0.25 1</ambient><diffuse>0.2 0.25 0.35 1</diffuse></material></visual>
+      <visual name="f5"><pose>0 0 16 0 0 0</pose><geometry><box><size>8.05 8.05 0.6</size></box></geometry><material><ambient>0.15 0.18 0.25 1</ambient><diffuse>0.2 0.25 0.35 1</diffuse></material></visual></link></model>
+    <!-- 옆 빌딩 (좌측이 약간 더 비어있어서 드론이 좌로 swerve 유도) -->
+    <model name="t_side1_l"><static>true</static><pose>20 16 18 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>9 8 36</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>9 8 36</size></box></geometry><material><ambient>0.4 0.43 0.5 1</ambient></material></visual></link></model>
+    <model name="t_side1_r"><static>true</static><pose>20 -16 25 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>9 8 50</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>9 8 50</size></box></geometry><material><ambient>0.46 0.48 0.54 1</ambient></material></visual></link></model>
+
+    <!-- 사이 통과 구간: tower 양쪽에 (y=±10) → 가운데 비어있음 -->
+    <model name="t_pair_l"><static>true</static><pose>35 11 30 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>10 10 60</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>10 10 60</size></box></geometry><material><ambient>0.38 0.4 0.48 1</ambient></material></visual></link></model>
+    <model name="t_pair_r"><static>true</static><pose>35 -11 30 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>10 10 60</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>10 10 60</size></box></geometry><material><ambient>0.44 0.46 0.52 1</ambient></material></visual></link></model>
+
+    <!-- ⭐ SWERVE 포인트 #2 (x=50): 다시 tower가 y=0 막음. 이번엔 우측이 더 비어있게 -->
+    <model name="t_swerve2"><static>true</static><pose>50 0 18 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>9 9 36</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>9 9 36</size></box></geometry><material><ambient>0.52 0.54 0.6 1</ambient></material></visual>
+      <visual name="f1"><pose>0 0 -13 0 0 0</pose><geometry><box><size>9.05 9.05 0.6</size></box></geometry><material><ambient>0.15 0.18 0.25 1</ambient><diffuse>0.22 0.27 0.4 1</diffuse></material></visual>
+      <visual name="f2"><pose>0 0 -6 0 0 0</pose><geometry><box><size>9.05 9.05 0.6</size></box></geometry><material><ambient>0.15 0.18 0.25 1</ambient><diffuse>0.22 0.27 0.4 1</diffuse></material></visual>
+      <visual name="f3"><pose>0 0 1 0 0 0</pose><geometry><box><size>9.05 9.05 0.6</size></box></geometry><material><ambient>0.15 0.18 0.25 1</ambient><diffuse>0.22 0.27 0.4 1</diffuse></material></visual>
+      <visual name="f4"><pose>0 0 8 0 0 0</pose><geometry><box><size>9.05 9.05 0.6</size></box></geometry><material><ambient>0.15 0.18 0.25 1</ambient><diffuse>0.22 0.27 0.4 1</diffuse></material></visual>
+      <visual name="f5"><pose>0 0 15 0 0 0</pose><geometry><box><size>9.05 9.05 0.6</size></box></geometry><material><ambient>0.15 0.18 0.25 1</ambient><diffuse>0.22 0.27 0.4 1</diffuse></material></visual></link></model>
+    <model name="t_side2_l"><static>true</static><pose>50 14 22 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>10 8 44</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>10 8 44</size></box></geometry><material><ambient>0.45 0.47 0.53 1</ambient></material></visual></link></model>
+    <!-- 우측은 더 멀리 → clearance 큼 → 드론 우로 swerve -->
+    <model name="t_side2_r"><static>true</static><pose>50 -18 17 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>8 8 34</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>8 8 34</size></box></geometry><material><ambient>0.5 0.52 0.58 1</ambient></material></visual></link></model>
+
+    <!-- 다시 가운데 비는 구간 -->
+    <model name="t_pair2_l"><static>true</static><pose>65 12 25 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>11 11 50</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>11 11 50</size></box></geometry><material><ambient>0.42 0.44 0.5 1</ambient></material></visual></link></model>
+    <model name="t_pair2_r"><static>true</static><pose>65 -12 25 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>11 11 50</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>11 11 50</size></box></geometry><material><ambient>0.48 0.5 0.56 1</ambient></material></visual></link></model>
+
+    <!-- ⭐ SWERVE 포인트 #3 (x=80): tower 다시 y=0. 좌측이 더 비어있게 -->
+    <model name="t_swerve3"><static>true</static><pose>80 0 20 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>8 8 40</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>8 8 40</size></box></geometry><material><ambient>0.55 0.57 0.62 1</ambient></material></visual>
+      <visual name="f1"><pose>0 0 -14 0 0 0</pose><geometry><box><size>8.05 8.05 0.6</size></box></geometry><material><ambient>0.15 0.18 0.25 1</ambient><diffuse>0.22 0.28 0.4 1</diffuse></material></visual>
+      <visual name="f2"><pose>0 0 -7 0 0 0</pose><geometry><box><size>8.05 8.05 0.6</size></box></geometry><material><ambient>0.15 0.18 0.25 1</ambient><diffuse>0.22 0.28 0.4 1</diffuse></material></visual>
+      <visual name="f3"><pose>0 0 0 0 0 0</pose><geometry><box><size>8.05 8.05 0.6</size></box></geometry><material><ambient>0.15 0.18 0.25 1</ambient><diffuse>0.22 0.28 0.4 1</diffuse></material></visual>
+      <visual name="f4"><pose>0 0 7 0 0 0</pose><geometry><box><size>8.05 8.05 0.6</size></box></geometry><material><ambient>0.15 0.18 0.25 1</ambient><diffuse>0.22 0.28 0.4 1</diffuse></material></visual>
+      <visual name="f5"><pose>0 0 14 0 0 0</pose><geometry><box><size>8.05 8.05 0.6</size></box></geometry><material><ambient>0.15 0.18 0.25 1</ambient><diffuse>0.22 0.28 0.4 1</diffuse></material></visual></link></model>
+    <model name="t_side3_l"><static>true</static><pose>80 -14 18 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>9 8 36</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>9 8 36</size></box></geometry><material><ambient>0.46 0.48 0.54 1</ambient></material></visual></link></model>
+    <!-- 좌측 더 멀리 → 좌로 swerve -->
+    <model name="t_side3_r"><static>true</static><pose>80 14 14 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>8 8 28</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>8 8 28</size></box></geometry><material><ambient>0.5 0.52 0.58 1</ambient></material></visual></link></model>
+
+    <!-- 다운타운 종료 빌딩 -->
+    <model name="t_exit_l"><static>true</static><pose>95 12 14 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>10 10 28</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>10 10 28</size></box></geometry><material><ambient>0.5 0.5 0.55 1</ambient></material></visual></link></model>
+    <model name="t_exit_r"><static>true</static><pose>95 -12 14 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>10 10 28</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>10 10 28</size></box></geometry><material><ambient>0.55 0.55 0.58 1</ambient></material></visual></link></model>
+
+    <!-- ════════════ ④ 다운타운 → 주거 전환 (x: 105 → 125) ════════════ -->
+    <model name="midb_5"><static>true</static><pose>110 13 8 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>10 8 16</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>10 8 16</size></box></geometry><material><ambient>0.62 0.5 0.4 1</ambient></material></visual></link></model>
+    <model name="midb_6"><static>true</static><pose>110 -13 8 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>10 8 16</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>10 8 16</size></box></geometry><material><ambient>0.5 0.55 0.5 1</ambient></material></visual></link></model>
+    <!-- 공원 -->
+    <model name="park_grass"><static>true</static><pose>122 0 0.02 0 0 0</pose><link name="l">
+      <visual name="v"><geometry><box><size>14 28 0.02</size></box></geometry>
+        <material><script><uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Grass</name></script><ambient>0.22 0.5 0.22 1</ambient></material></visual></link></model>
+    <include><name>t_p1</name><uri>model://Pine Tree</uri><pose>118 8 0 0 0 0</pose></include>
+    <include><name>t_p2</name><uri>model://Oak tree</uri><pose>126 -8 0 0 0 0</pose></include>
+
+    <!-- ════════════ ⑤ 목적지 주택가 + 착륙 시나리오 (x: 135 → 180) ════════════ -->
+    <model name="asphalt_zone"><static>true</static><pose>150 0 0.01 0 0 0</pose><link name="l">
+      <visual name="v"><geometry><box><size>34 28 0.02</size></box></geometry>
+        <material><script><uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Road</name></script><ambient>0.32 0.32 0.34 1</ambient></material></visual></link></model>
+    <model name="lane_a"><static>true</static><pose>150 3.0 0.03 0 0 0</pose><link name="l"><visual name="v"><geometry><box><size>14 0.14 0.01</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient></material></visual></link></model>
+    <model name="lane_b"><static>true</static><pose>150 -3.0 0.03 0 0 0</pose><link name="l"><visual name="v"><geometry><box><size>14 0.14 0.01</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient></material></visual></link></model>
+    <!-- 목적지 주변 주택 (House 1/3만, 4개) -->
+    <include><name>h_d1</name><uri>model://House 1</uri><pose>148 17 0 0 0 0</pose></include>
+    <include><name>h_d2</name><uri>model://House 3</uri><pose>148 -17 0 0 0 3.1416</pose></include>
+    <include><name>h_d3</name><uri>model://House 3</uri><pose>175 12 0 0 0 0</pose></include>
+    <include><name>h_d4</name><uri>model://House 1</uri><pose>175 -12 0 0 0 3.1416</pose></include>
+
+    <!-- 후보 ③ 위험: 낮은 차고 지붕 (1.3m 솟음 → depth 거부) -->
+    <model name="low_garage"><static>true</static><pose>144 -6 0.65 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>4.6 4.6 1.3</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>4.6 4.6 1.3</size></box></geometry><material><ambient>0.55 0.55 0.5 1</ambient></material></visual></link></model>
+    <!-- 잔디 정원 -->
+    <model name="garden_grass"><static>true</static><pose>162 -1 0.02 0 0 0</pose><link name="l">
+      <visual name="v"><geometry><box><size>8 12 0.02</size></box></geometry>
+        <material><script><uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Grass</name></script><ambient>0.2 0.5 0.2 1</ambient></material></visual></link></model>
+
+    <!-- 후보 ② 위험: NE 차들 클러스터 (Fuel) -->
+    <include><name>c_d1</name><uri>model://Hatchback</uri><pose>154 6.5 0 0 0 0</pose></include>
+    <include><name>c_d2</name><uri>model://Pickup</uri><pose>156 2.5 0 0 0 0</pose></include>
+    <include><name>c_d3</name><uri>model://Hatchback</uri><pose>147 7.5 0 0 0 0</pose></include>
+    <include><name>c_d4</name><uri>model://Pickup</uri><pose>143 -10 0 0 0 0</pose></include>
+    <include><name>cone_d1</name><uri>model://Construction Cone</uri><pose>156.5 8.5 0 0 0 0</pose></include>
+    <include><name>cone_d2</name><uri>model://Construction Cone</uri><pose>158 4.0 0 0 0 0</pose></include>
+    <include><name>fh_d1</name><uri>model://Fire hydrant</uri><pose>148 -7.8 0 0 0 0</pose></include>
+    <include><name>mb_d1</name><uri>model://Mailbox</uri><pose>149 13 0 0 0 0</pose></include>
+    <include><name>lp_d1</name><uri>model://Lamp Post</uri><pose>153 -7.5 0 0 0 0</pose></include>
+    <include><name>lp_d2</name><uri>model://Lamp Post</uri><pose>147 6 0 0 0 0</pose></include>
+    <include><name>td_1</name><uri>model://Oak tree</uri><pose>159 8 0 0 0 0</pose></include>
+    <include><name>td_2</name><uri>model://Pine Tree</uri><pose>142 -2 0 0 0 0</pose></include>
+
+    <!-- 보행자 -->
+    <model name="person_1"><static>true</static><pose>152 8 0.85 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><cylinder><radius>0.25</radius><length>1.7</length></cylinder></geometry></collision>
+      <visual name="b"><geometry><cylinder><radius>0.25</radius><length>1.4</length></cylinder></geometry><material><ambient>0.2 0.3 0.6 1</ambient></material></visual>
+      <visual name="h"><pose>0 0 0.9 0 0 0</pose><geometry><sphere><radius>0.16</radius></sphere></geometry><material><ambient>0.8 0.65 0.5 1</ambient></material></visual></link></model>
+    <model name="person_2"><static>true</static><pose>147 -8.5 0.85 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><cylinder><radius>0.25</radius><length>1.7</length></cylinder></geometry></collision>
+      <visual name="b"><geometry><cylinder><radius>0.25</radius><length>1.4</length></cylinder></geometry><material><ambient>0.6 0.2 0.25 1</ambient></material></visual>
+      <visual name="h"><pose>0 0 0.9 0 0 0</pose><geometry><sphere><radius>0.16</radius></sphere></geometry><material><ambient>0.8 0.65 0.5 1</ambient></material></visual></link></model>
+
+    <!-- 침입 보행자 -->
+    <model name="person_intruder"><static>false</static><pose>150 9 0.85 0 0 0</pose><link name="l">
+      <gravity>false</gravity><kinematic>true</kinematic>
+      <inertial><mass>1</mass><inertia><ixx>0.1</ixx><iyy>0.1</iyy><izz>0.05</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+      <collision name="c"><geometry><cylinder><radius>0.25</radius><length>1.7</length></cylinder></geometry></collision>
+      <visual name="b"><geometry><cylinder><radius>0.25</radius><length>1.4</length></cylinder></geometry><material><ambient>0.9 0.55 0.05 1</ambient></material></visual>
+      <visual name="h"><pose>0 0 0.9 0 0 0</pose><geometry><sphere><radius>0.16</radius></sphere></geometry><material><ambient>0.8 0.65 0.5 1</ambient></material></visual></link></model>
+
+    <!-- 배송 목적지 -->
+    <model name="delivery_target_marker"><static>true</static><pose>150 0 0.12 0 0 0</pose><link name="l">
+      <visual name="v"><geometry><sphere><radius>0.12</radius></sphere></geometry><material><ambient>0.1 0.85 0.2 0.8</ambient></material></visual></link></model>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- 배송 드론 — 하강 RGB + 하강 Depth + Chase + 전방 Depth 4센서 -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <model name="delivery_drone">
+      <pose>-150 0 7 0 0 0</pose>
+      <link name="base_link">
+        <gravity>false</gravity><kinematic>true</kinematic>
+        <inertial><mass>1.6</mass><inertia><ixx>0.03</ixx><iyy>0.03</iyy><izz>0.05</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+
+        <visual name="body"><geometry><box><size>0.34 0.34 0.09</size></box></geometry><material><ambient>0.13 0.13 0.16 1</ambient><diffuse>0.18 0.18 0.21 1</diffuse></material></visual>
+        <visual name="canopy"><pose>0 0 0.06 0 0 0</pose><geometry><box><size>0.20 0.20 0.05</size></box></geometry><material><ambient>0.85 0.45 0.1 1</ambient><diffuse>0.95 0.5 0.12 1</diffuse></material></visual>
+        <visual name="arm_a"><pose>0 0 0 0 0 0.785</pose><geometry><box><size>0.60 0.035 0.022</size></box></geometry><material><ambient>0.08 0.08 0.08 1</ambient></material></visual>
+        <visual name="arm_b"><pose>0 0 0 0 0 -0.785</pose><geometry><box><size>0.60 0.035 0.022</size></box></geometry><material><ambient>0.08 0.08 0.08 1</ambient></material></visual>
+        <visual name="motor_fl"><pose> 0.21  0.21 0.03 0 0 0</pose><geometry><cylinder><radius>0.03</radius><length>0.05</length></cylinder></geometry><material><ambient>0.2 0.2 0.22 1</ambient></material></visual>
+        <visual name="motor_fr"><pose> 0.21 -0.21 0.03 0 0 0</pose><geometry><cylinder><radius>0.03</radius><length>0.05</length></cylinder></geometry><material><ambient>0.2 0.2 0.22 1</ambient></material></visual>
+        <visual name="motor_bl"><pose>-0.21  0.21 0.03 0 0 0</pose><geometry><cylinder><radius>0.03</radius><length>0.05</length></cylinder></geometry><material><ambient>0.2 0.2 0.22 1</ambient></material></visual>
+        <visual name="motor_br"><pose>-0.21 -0.21 0.03 0 0 0</pose><geometry><cylinder><radius>0.03</radius><length>0.05</length></cylinder></geometry><material><ambient>0.2 0.2 0.22 1</ambient></material></visual>
+        <visual name="prop_fl"><pose> 0.21  0.21 0.07 0 0 0</pose><geometry><cylinder><radius>0.15</radius><length>0.008</length></cylinder></geometry><material><ambient>0.4 0.4 0.45 0.55</ambient><diffuse>0.4 0.4 0.45 0.55</diffuse></material></visual>
+        <visual name="prop_fr"><pose> 0.21 -0.21 0.07 0 0 0</pose><geometry><cylinder><radius>0.15</radius><length>0.008</length></cylinder></geometry><material><ambient>0.4 0.4 0.45 0.55</ambient><diffuse>0.4 0.4 0.45 0.55</diffuse></material></visual>
+        <visual name="prop_bl"><pose>-0.21  0.21 0.07 0 0 0</pose><geometry><cylinder><radius>0.15</radius><length>0.008</length></cylinder></geometry><material><ambient>0.4 0.4 0.45 0.55</ambient><diffuse>0.4 0.4 0.45 0.55</diffuse></material></visual>
+        <visual name="prop_br"><pose>-0.21 -0.21 0.07 0 0 0</pose><geometry><cylinder><radius>0.15</radius><length>0.008</length></cylinder></geometry><material><ambient>0.4 0.4 0.45 0.55</ambient><diffuse>0.4 0.4 0.45 0.55</diffuse></material></visual>
+        <visual name="leg_fl"><pose> 0.12  0.12 -0.11 0 0 0</pose><geometry><box><size>0.02 0.02 0.16</size></box></geometry><material><ambient>0.1 0.1 0.1 1</ambient></material></visual>
+        <visual name="leg_fr"><pose> 0.12 -0.12 -0.11 0 0 0</pose><geometry><box><size>0.02 0.02 0.16</size></box></geometry><material><ambient>0.1 0.1 0.1 1</ambient></material></visual>
+        <visual name="leg_bl"><pose>-0.12  0.12 -0.11 0 0 0</pose><geometry><box><size>0.02 0.02 0.16</size></box></geometry><material><ambient>0.1 0.1 0.1 1</ambient></material></visual>
+        <visual name="leg_br"><pose>-0.12 -0.12 -0.11 0 0 0</pose><geometry><box><size>0.02 0.02 0.16</size></box></geometry><material><ambient>0.1 0.1 0.1 1</ambient></material></visual>
+        <visual name="foot_f"><pose> 0.12 0 -0.19 0 0 0</pose><geometry><box><size>0.06 0.30 0.02</size></box></geometry><material><ambient>0.1 0.1 0.1 1</ambient></material></visual>
+        <visual name="foot_b"><pose>-0.12 0 -0.19 0 0 0</pose><geometry><box><size>0.06 0.30 0.02</size></box></geometry><material><ambient>0.1 0.1 0.1 1</ambient></material></visual>
+        <visual name="gimbal"><pose>0 0 -0.085 0 0 0</pose><geometry><sphere><radius>0.045</radius></sphere></geometry><material><ambient>0.05 0.05 0.05 1</ambient></material></visual>
+        <visual name="parcel"><pose>-0.13 0 -0.05 0 0 0</pose><geometry><box><size>0.13 0.13 0.11</size></box></geometry><material><ambient>0.62 0.46 0.3 1</ambient><diffuse>0.7 0.52 0.34 1</diffuse></material></visual>
+
+        <sensor name="down_cam" type="camera"><pose>0.02 0 -0.12 0 1.5708 0</pose><update_rate>15</update_rate>
+          <camera><horizontal_fov>1.396</horizontal_fov><image><width>640</width><height>480</height><format>R8G8B8</format></image><clip><near>0.1</near><far>400</far></clip></camera>
+          <plugin name="down_cam_plugin" filename="libgazebo_ros_camera.so"><ros><namespace>/drone</namespace></ros><camera_name>down_cam</camera_name><frame_name>down_cam_link</frame_name></plugin></sensor>
+        <sensor name="down_depth" type="depth"><pose>0.02 0 -0.12 0 1.5708 0</pose><update_rate>10</update_rate>
+          <camera><horizontal_fov>1.396</horizontal_fov><image><width>320</width><height>240</height><format>R8G8B8</format></image><clip><near>0.1</near><far>400</far></clip></camera>
+          <plugin name="down_depth_plugin" filename="libgazebo_ros_camera.so"><ros><namespace>/drone</namespace></ros><camera_name>down_depth</camera_name><frame_name>down_depth_link</frame_name><min_depth>0.1</min_depth><max_depth>400.0</max_depth></plugin></sensor>
+        <sensor name="chase_cam" type="camera"><pose>-2.0 0 3.5 0 0.62 0</pose><update_rate>15</update_rate>
+          <camera><horizontal_fov>1.5</horizontal_fov><image><width>640</width><height>400</height><format>R8G8B8</format></image><clip><near>0.05</near><far>500</far></clip></camera>
+          <plugin name="chase_cam_plugin" filename="libgazebo_ros_camera.so"><ros><namespace>/drone</namespace></ros><camera_name>chase_cam</camera_name><frame_name>chase_cam_link</frame_name></plugin></sensor>
+        <!-- 전방 Depth 카메라 (반응형 회피용) -->
+        <sensor name="front_depth" type="depth"><pose>0.2 0 0 0 0 0</pose><update_rate>10</update_rate>
+          <camera><horizontal_fov>1.5</horizontal_fov><image><width>320</width><height>240</height><format>R8G8B8</format></image><clip><near>0.3</near><far>200</far></clip></camera>
+          <plugin name="front_depth_plugin" filename="libgazebo_ros_camera.so"><ros><namespace>/drone</namespace></ros><camera_name>front_depth</camera_name><frame_name>front_depth_link</frame_name><min_depth>0.3</min_depth><max_depth>200.0</max_depth></plugin></sensor>
+        <!-- 아이소메트릭 카메라 (뒤-우 위쪽에서 드론+장면을 대각선으로 — 게임 3인칭 뷰) -->
+        <sensor name="iso_cam" type="camera"><pose>-4 3 6 0 0.7 -0.45</pose><update_rate>15</update_rate>
+          <camera><horizontal_fov>1.4</horizontal_fov><image><width>640</width><height>400</height><format>R8G8B8</format></image><clip><near>0.05</near><far>500</far></clip></camera>
+          <plugin name="iso_cam_plugin" filename="libgazebo_ros_camera.so"><ros><namespace>/drone</namespace></ros><camera_name>iso_cam</camera_name><frame_name>iso_cam_link</frame_name></plugin></sensor>
+      </link>
+      <plugin name="drone_p3d" filename="libgazebo_ros_p3d.so">
+        <ros><namespace>/drone</namespace><remapping>odom:=odom</remapping></ros><body_name>base_link</body_name><frame_name>world</frame_name><update_rate>50</update_rate></plugin>
+    </model>
+
+  </world>
+</sdf>

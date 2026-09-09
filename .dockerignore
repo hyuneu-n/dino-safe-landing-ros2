@@ -1,0 +1,15 @@
+.git
+frames/
+logs/
+__pycache__/
+*.pyc
+*.log
+overlay.png
+dino_pca.png
+down_cam.png
+worlds/generated*/
+eval/results*/
+eval/__pycache__/
+eval/models/*.onnx
+eval/models/*.blob
+*.bak*

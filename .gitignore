@@ -1,0 +1,12 @@
+frames/
+logs/
+__pycache__/
+*.pyc
+*.log
+overlay.png
+dino_pca.png
+down_cam.png
+worlds/generated*/
+eval/models/*.onnx
+eval/models/*.blob
+eval/results*/
