@@ -530,15 +530,33 @@ def build_village_xml(parts, rng, args):
         branches.append(branch_pts)
         all_pts.extend(branch_pts)
 
-    # 2026-09-04: "집을 더 빽빽하게!" — 메인 길 16→34, 골목 5→11, 연결로에도 새로 8채.
-    houses, trees = gen_village_scatter(rng, main_pts, 6.0, n_houses=34, n_trees=20)
+    # 2026-09-10: "마을이 여전히 부실하다, 마을 같지가 않다" — 밀도 더 올리고(34→46, 11→14),
+    # 중심 광장(우물+마을회관+집 링)을 넣어 "중심이 있는 정착지"로 만든다.
+    houses, trees = gen_village_scatter(rng, main_pts, 6.0, n_houses=46, n_trees=26)
     for b_pts in branches:
-        bh, bt = gen_village_scatter(rng, b_pts, 5.0, n_houses=11, n_trees=6)
+        bh, bt = gen_village_scatter(rng, b_pts, 5.0, n_houses=14, n_trees=7)
         houses.extend(bh)
         trees.extend(bt)
-    ch, ct = gen_village_scatter(rng, connector_pts, 6.0, n_houses=8, n_trees=6)
+    ch, ct = gen_village_scatter(rng, connector_pts, 6.0, n_houses=10, n_trees=7)
     houses.extend(ch)
     trees.extend(ct)
+
+    # 중심 광장 — 메인 길 55% 지점 옆으로 살짝 비켜서
+    sq_seg_lens = [math.hypot(main_pts[k + 1][0] - main_pts[k][0], main_pts[k + 1][1] - main_pts[k][1])
+                   for k in range(len(main_pts) - 1)]
+    sq_px, sq_py, sq_head = _point_on_path(main_pts, sq_seg_lens, sum(sq_seg_lens), sum(sq_seg_lens) * 0.55)
+    sq_cx = sq_px + math.cos(sq_head + math.pi / 2) * 34.0
+    sq_cy = sq_py + math.sin(sq_head + math.pi / 2) * 34.0
+    build_village_square(parts, rng, sq_cx, sq_cy)
+
+    # 마을 안 배송 목적지 2곳 (랜덤워크 형상에 맞춰 생성)
+    end_x, end_y = main_pts[-1]
+    village_spots = [
+        {"x": round(sq_cx, 1), "y": round(sq_cy, 1), "label": "마을 회관 앞마당", "kind": "green",
+         "note": "우물·벤치·집으로 둘러싸인 마을 중심 — 개방됐지만 사방이 저층 건물"},
+        {"x": round(end_x, 1), "y": round(end_y, 1), "label": "마을 어귀 공터", "kind": "vacant",
+         "note": "마을 끝 비포장 공터 — 도심과 완전히 다른 시골 배경"},
+    ]
 
     bcount = 0
     for h in houses:
@@ -568,7 +586,7 @@ def build_village_xml(parts, rng, args):
                   f'<visual name="v"><geometry><box><size>{g_len:.1f} {g_w:.1f} 0.01</size></box></geometry>'
                   '<material><script><uri>file://media/materials/scripts/gazebo.material</uri>'
                   '<name>Gazebo/Grass</name></script></material></visual></link></model>\n\n')
-    return (gx_min, gx_max, gy_min, gy_max)
+    return (gx_min, gx_max, gy_min, gy_max), village_spots
 
 
 def render_intersection(parts, node, args):
@@ -586,6 +604,197 @@ def render_intersection(parts, node, args):
     else:
         parts.append(flat_patch(f"isect_{i}_{j}", x, y, ROAD_TILE_W, ROAD_TILE_W,
                                  (0.28, 0.28, 0.30), z=0.005))
+
+
+# ───────────────────────── 배송 목적지 (클릭 리타겟용 착륙 시나리오) ─────────────────────────
+# 2026-09-10: "목적지가 많지 않고 다 똑같이 비행한다, 사람들이 누를 맵이 없다" 요청.
+# 성격이 다른 착륙 시나리오를 맵 곳곳에 만들고(광장/공원/주차장/공터/협곡/옥상/마을회관),
+# 각각 이름표 깃발 마커로 노출한다. mission_controller.py는 이미 /clicked_point 리타겟을
+# 지원하므로, 여기서는 (1) 시각적으로 구분되는 착륙지 피처 + (2) 발견 가능한 마커 +
+# (3) waypoints.json에 좌표·라벨을 실어주면 된다. START_XY→TARGET_XY 경로계획은 안 건드림.
+
+def _mat(color, a=1.0):
+    r, g, b = color
+    return (f'<material><ambient>{r:.2f} {g:.2f} {b:.2f} {a}</ambient>'
+            f'<diffuse>{min(r+0.05,1):.2f} {min(g+0.05,1):.2f} {min(b+0.05,1):.2f} {a}</diffuse></material>')
+
+
+def ground_patch(name, x, y, sx, sy, color, z=0.02):
+    """바닥 패치(포장/흙/잔디 등). generate_world.flat_patch()는 <ambient>만 있어서 밝은 색이
+    햇빛에 하얗게 날아간다(2026-09-10 렌더 확인) — box()는 ambient+diffuse를 둘 다 써서 색이
+    제대로 나오므로 얇은 무충돌 박스로 깐다."""
+    return box(name, x, y, z, sx, sy, 0.04, color=color, collide=False)
+
+
+def landing_flag(parts, name, x, y, color, label_h=6.5):
+    """착륙지 위치 표시용 깃발 — 흰 기둥 + 색깔 깃발 + 꼭대기 구슬. 사람이 RViz/Gazebo에서
+    "저기가 후보구나" 하고 알아볼 수 있게 밝고 크게. 사람 읽는 라벨은 waypoints.json으로."""
+    parts.append(
+        f'<model name="{name}_flag"><static>true</static><pose>{x:.2f} {y:.2f} 0 0 0 0</pose><link name="l">'
+        f'<visual name="pole"><pose>0 0 {label_h/2:.2f} 0 0 0</pose>'
+        f'<geometry><cylinder><radius>0.13</radius><length>{label_h:.2f}</length></cylinder></geometry>{_mat((0.93,0.93,0.93))}</visual>'
+        f'<visual name="flag"><pose>0.85 0 {label_h-0.65:.2f} 0 0 0</pose>'
+        f'<geometry><box><size>1.7 0.07 1.15</size></box></geometry>{_mat(color)}</visual>'
+        f'<visual name="ball"><pose>0 0 {label_h+0.18:.2f} 0 0 0</pose>'
+        f'<geometry><sphere><radius>0.32</radius></sphere></geometry>{_mat(color)}</visual>'
+        f'</link></model>\n')
+
+
+def feat_helipad(parts, name, x, y, size=9.0):
+    parts.append(ground_patch(f"{name}_pad", x, y, size, size, (0.30, 0.30, 0.33)))
+    s = size
+    parts.append(
+        f'<model name="{name}_H"><static>true</static><pose>{x:.2f} {y:.2f} 0.035 0 0 0</pose><link name="l">'
+        f'<visual name="a"><pose>{-s*0.16:.2f} 0 0 0 0 0</pose><geometry><box><size>{s*0.12:.2f} {s*0.5:.2f} 0.02</size></box></geometry>{_mat((0.96,0.96,0.96))}</visual>'
+        f'<visual name="b"><pose>{s*0.16:.2f} 0 0 0 0 0</pose><geometry><box><size>{s*0.12:.2f} {s*0.5:.2f} 0.02</size></box></geometry>{_mat((0.96,0.96,0.96))}</visual>'
+        f'<visual name="c"><pose>0 0 0 0 0 0</pose><geometry><box><size>{s*0.32:.2f} {s*0.12:.2f} 0.02</size></box></geometry>{_mat((0.96,0.96,0.96))}</visual>'
+        f'</link></model>\n')
+
+
+def feat_plaza(parts, name, x, y, rng, size=16.0):
+    """포장 광장 — 가로등 4개 + 화단 박스 몇 개로 둘러싸고 중앙만 비움 (주변 장애물 많음)."""
+    parts.append(ground_patch(f"{name}_pave", x, y, size, size, (0.55, 0.52, 0.48)))
+    h = size / 2 - 1.0
+    for k, (dx, dy) in enumerate([(-h, -h), (h, -h), (-h, h), (h, h)]):
+        parts.append(lamp_post(f"{name}_lamp{k}", x + dx, y + dy))
+    for k in range(5):
+        px = x + rng.uniform(-h, h)
+        py = y + rng.choice([-1, 1]) * rng.uniform(h * 0.55, h)
+        parts.append(box(f"{name}_planter{k}", px, py, 0.4, rng.uniform(1.6, 2.6), rng.uniform(1.0, 1.6), 0.8,
+                          color=(0.30, 0.45, 0.28)))
+
+
+def feat_park(parts, name, x, y, rng, r=13.0):
+    """근린공원 — 가장자리 나무 링 + 벤치 몇 개, 중앙만 개방 (반경 안에서 골라야 함)."""
+    n = 12
+    for k in range(n):
+        a = 2 * math.pi * k / n + rng.uniform(-0.15, 0.15)
+        tx, ty = x + math.cos(a) * r, y + math.sin(a) * r
+        parts.append(mesh_tree(f"{name}_tree{k}", tx, ty, rng.choice(list(TREE_MESHES)), target_h=rng.uniform(4.0, 6.0)))
+    for k in range(3):
+        a = rng.uniform(0, 2 * math.pi)
+        bx, by = x + math.cos(a) * (r * 0.45), y + math.sin(a) * (r * 0.45)
+        parts.append(box(f"{name}_bench{k}", bx, by, 0.35, 2.4, 0.6, 0.7, yaw=a, color=(0.45, 0.32, 0.2)))
+
+
+def feat_parking(parts, name, x, y, rng, w=24.0, d=17.0):
+    """마트 주차장 — 아스팔트 + 차량 그리드, 중앙 근처 스톨 하나만 비움 (난이도 상)."""
+    parts.append(ground_patch(f"{name}_asph", x, y, w, d, (0.22, 0.22, 0.24)))
+    cols = max(int(w // 6), 2)
+    rows = max(int(d // 5), 2)
+    empties = {(cols // 2, rows // 2), (cols // 2 - 1, rows // 2)}
+    palette = [(0.75, 0.1, 0.1), (0.1, 0.2, 0.6), (0.85, 0.85, 0.85), (0.1, 0.1, 0.12), (0.6, 0.55, 0.1)]
+    for ci in range(cols):
+        for ri in range(rows):
+            if (ci, ri) in empties:
+                continue
+            cx = x - w / 2 + 3 + ci * (w - 6) / max(cols - 1, 1)
+            cy = y - d / 2 + 2.5 + ri * (d - 5) / max(rows - 1, 1)
+            parts.append(car(f"{name}_car{ci}_{ri}", cx, cy, 1.5708, rng.choice(palette)))
+
+
+def feat_vacant(parts, name, x, y, rng, w=20.0, d=16.0):
+    """공터/야적장 — 비포장 흙바닥 + 잔해 박스·콘·부분 펜스 (표면이 애매, semantic 배제 테스트)."""
+    parts.append(ground_patch(f"{name}_dirt", x, y, w, d, (0.42, 0.34, 0.24)))
+    for k in range(6):
+        px, py = x + rng.uniform(-w / 2 + 2, w / 2 - 2), y + rng.uniform(-d / 2 + 2, d / 2 - 2)
+        if math.hypot(px - x, py - y) < 3.0:
+            continue
+        parts.append(box(f"{name}_debris{k}", px, py, rng.uniform(0.3, 0.8), rng.uniform(1.0, 2.5),
+                          rng.uniform(1.0, 2.0), rng.uniform(0.6, 1.6), yaw=rng.uniform(0, 3.14),
+                          color=(0.5, 0.48, 0.45)))
+    for k in range(4):
+        parts.append(cone(f"{name}_cone{k}", x + rng.uniform(-w / 2, w / 2), y + rng.uniform(-d / 2, d / 2)))
+    for k in range(5):  # 한쪽 펜스
+        parts.append(box(f"{name}_fence{k}", x - w / 2, y - d / 2 + 1.5 + k * (d - 3) / 4, 0.9,
+                          0.15, (d - 3) / 4 * 0.9, 1.8, color=(0.55, 0.55, 0.58)))
+
+
+def feat_rooftop(parts, name, x, y, bh=6.5, size=11.0):
+    """옥상 패드 — 지상보다 높은 포장 플랫폼(주차타워 옥상 느낌). 상면이 좁고 가장자리 낙하
+    위험. 지상 하강 로직으로도 대충 되도록 높이는 낮게(6~7m)."""
+    parts.append(box(f"{name}_podium", x, y, bh / 2, size, size, bh, color=(0.5, 0.5, 0.54)))
+    parts.append(ground_patch(f"{name}_deck", x, y, size * 0.92, size * 0.92, (0.32, 0.32, 0.36), z=bh + 0.02))
+    parts.append(
+        f'<model name="{name}_H"><static>true</static><pose>{x:.2f} {y:.2f} {bh+0.05:.2f} 0 0 0</pose><link name="l">'
+        f'<visual name="a"><pose>-1.6 0 0 0 0 0</pose><geometry><box><size>1.0 4.0 0.03</size></box></geometry>{_mat((0.96,0.96,0.96))}</visual>'
+        f'<visual name="b"><pose>1.6 0 0 0 0 0</pose><geometry><box><size>1.0 4.0 0.03</size></box></geometry>{_mat((0.96,0.96,0.96))}</visual>'
+        f'<visual name="c"><pose>0 0 0 0 0 0</pose><geometry><box><size>2.2 1.0 0.03</size></box></geometry>{_mat((0.96,0.96,0.96))}</visual>'
+        f'</link></model>\n')
+
+
+_SPOT_FLAG_COLORS = {
+    "helipad": (0.1, 0.8, 0.25), "plaza": (0.95, 0.75, 0.1), "park": (0.2, 0.7, 0.35),
+    "parking": (0.9, 0.4, 0.1), "vacant": (0.7, 0.5, 0.3), "street": (0.85, 0.15, 0.5),
+    "rooftop": (0.2, 0.55, 0.95), "green": (0.35, 0.75, 0.4),
+}
+
+
+def landing_spots_static():
+    """맵에 고정 배치되는 배송 목적지 후보들. 마을 안 목적지 2개는 build_village_xml()이
+    (랜덤워크로 생성되는 마을 형상에 맞춰) 따로 만들어 붙인다."""
+    mcx = sum(MANHATTAN_AVENUES) / len(MANHATTAN_AVENUES)
+    mcy = sum(MANHATTAN_STREETS) / len(MANHATTAN_STREETS)
+    return [
+        {"x": TARGET_XY[0], "y": TARGET_XY[1], "label": "배송 목적지 (기본 경로 종점)", "kind": "helipad",
+         "note": "격자도시 동쪽 끝, Dijkstra 경로가 실제 도착하는 지점"},
+        {"x": 182.0, "y": -45.0, "label": "도심 광장", "kind": "plaza",
+         "note": "가로등·화단으로 둘러싸인 포장 광장 — 주변 장애물 많음"},
+        {"x": -188.0, "y": 92.0, "label": "근린공원", "kind": "park",
+         "note": "가장자리 나무 링, 중앙만 개방 — 반경 안에서 골라야 함"},
+        {"x": 128.0, "y": 182.0, "label": "대형마트 주차장", "kind": "parking",
+         "note": "빽빽한 차량 사이 빈 스톨 하나 — 난이도 상"},
+        {"x": -178.0, "y": -168.0, "label": "산업단지 공터", "kind": "vacant",
+         "note": "잔해·펜스 있는 비포장 부지 — 표면이 애매(semantic 배제 테스트)"},
+        {"x": MANHATTAN_AVENUES[1], "y": (MANHATTAN_STREETS[2] + MANHATTAN_STREETS[3]) / 2,
+         "label": "맨해튼 스트리트 협곡", "kind": "street",
+         "note": "고층 사이 좁은 도로 — 하강 중 측면 여유 거의 없음"},
+        {"x": MANHATTAN_AVENUES[4], "y": MANHATTAN_STREETS[4], "label": "고층빌딩 옥상 패드", "kind": "rooftop",
+         "note": "고층 사이 교차로에 세운 포장 플랫폼(주차타워 옥상 느낌) — 상면이 좁고 가장자리 낙하 위험"},
+    ]
+
+
+def render_landing_spot(parts, name, spot, rng):
+    x, y, kind = spot["x"], spot["y"], spot["kind"]
+    if kind == "helipad":
+        feat_helipad(parts, name, x, y)
+    elif kind == "plaza":
+        feat_plaza(parts, name, x, y, rng)
+    elif kind == "park":
+        feat_park(parts, name, x, y, rng)
+    elif kind == "parking":
+        feat_parking(parts, name, x, y, rng)
+    elif kind == "vacant":
+        feat_vacant(parts, name, x, y, rng)
+    elif kind == "rooftop":
+        feat_rooftop(parts, name, x, y, bh=spot.get("bh", 18.0))
+    elif kind == "green":
+        feat_helipad(parts, name, x, y, size=8.0)  # 마을 회관 앞 포장 마당
+    # "street"는 협곡 자체가 시나리오라 별도 피처 없음
+    landing_flag(parts, name, x, y, _SPOT_FLAG_COLORS.get(kind, (0.9, 0.9, 0.1)))
+
+
+def build_village_square(parts, rng, cx, cy):
+    """마을 중심 광장 — 우물 + 마을회관(첨탑) + 벤치 + 촘촘한 집 링. "마을 같지가 않다"는
+    피드백 대응: 길가에 집만 흩어져 있던 걸 "중심이 있는 정착지"로 만든다."""
+    parts.append(ground_patch("vsq_ground", cx, cy, 34.0, 34.0, (0.50, 0.44, 0.30)))  # 다져진 흙 마당
+    parts.append(f'<model name="vsq_well"><static>true</static><pose>{cx:.2f} {cy:.2f} 0 0 0 0</pose><link name="l">'
+                  f'<visual name="w"><pose>0 0 0.5 0 0 0</pose><geometry><cylinder><radius>1.1</radius><length>1.0</length></cylinder></geometry>'
+                  f'{_mat((0.5,0.5,0.52))}</visual>'
+                  f'<visual name="roof"><pose>0 0 2.4 0 0 0</pose><geometry><box><size>2.6 2.6 0.2</size></box></geometry>'
+                  f'{_mat((0.4,0.25,0.15))}</visual></link></model>\n')
+    hx, hy = cx + 15.0, cy
+    parts.append(box("vsq_hall", hx, hy, 3.0, 9.0, 7.0, 6.0, color=(0.85, 0.82, 0.7)))
+    parts.append(box("vsq_spire", hx, hy + 2.0, 8.0, 1.2, 1.2, 4.0, color=(0.55, 0.15, 0.15)))
+    for k, (dx, dy, yw) in enumerate([(-7, 0, 0), (7, 0, 0), (0, -7, 1.5708), (0, 7, 1.5708)]):
+        parts.append(box(f"vsq_bench{k}", cx + dx, cy + dy, 0.35, 2.6, 0.6, 0.7, yaw=yw, color=(0.45, 0.32, 0.2)))
+    for k in range(9):
+        a = 2 * math.pi * k / 9 + rng.uniform(-0.15, 0.15)
+        r = rng.uniform(22.0, 26.0)
+        px, py = cx + math.cos(a) * r, cy + math.sin(a) * r
+        parts.append(mesh_house(f"bld_vsq_{k}", px, py, rng.choice(list(BUILDING_MESHES)),
+                                 target_w=rng.uniform(5.5, 8.0), yaw=a + math.pi,
+                                 color=rng.choice(VILLAGE_HOUSE_COLORS)))
 
 
 # ───────────────────────── 조립 ─────────────────────────
@@ -662,10 +871,25 @@ def build_city_xml(args, seed):
 
     # 마을 보조 구역 (비격자, 낮은 집 — 기존 도시/맨해튼과 완전히 별개)
     village_bounds = None
+    village_spots = []
     if args.village:
-        village_bounds = build_village_xml(parts, rng, args)
+        village_bounds, village_spots = build_village_xml(parts, rng, args)
 
-    # 목적지 마커 + 침입 보행자 (mission_controller.py INTRUDER_WAIT_XY와 좌표 일치)
+    # 배송 목적지 후보 (클릭 리타겟용) — 성격 다른 착륙 시나리오 + 이름표 깃발
+    spots = landing_spots_static() + village_spots
+    parts.append('\n    <!-- 배송 목적지 후보 (착륙 시나리오 + 마커) -->\n')
+    for si, s in enumerate(spots):
+        # 외곽에 뚝 떨어진 목적지는 가장 가까운 격자 가장자리에서 진입로를 이어 붙인다
+        if s["kind"] in ("plaza", "park", "parking", "vacant") and abs(s["x"]) <= 260 and abs(s["y"]) <= 260 \
+                and not (min(AVENUES) <= s["x"] <= max(AVENUES) and min(STREETS) <= s["y"] <= max(STREETS)):
+            ex = max(min(s["x"], max(AVENUES)), min(AVENUES))
+            ey = max(min(s["y"], max(STREETS)), min(STREETS))
+            if math.hypot(s["x"] - ex, s["y"] - ey) > 8.0:
+                acc = generate_connector_path(rng, (ex, ey), (s["x"], s["y"]), seg_len=12.0)
+                render_village_path(parts, acc, f"acc{si}", road_w=6.0)
+        render_landing_spot(parts, f"spot{si}", s, rng)
+
+    # 침입 보행자 + 기존 목적지 마커 (mission_controller.py INTRUDER_WAIT_XY와 좌표 일치)
     parts.append('\n    <!-- 침입 보행자 + 배송 목적지 -->\n')
     parts.append(person("person_intruder", INTRUDER_WAIT_XY[0], INTRUDER_WAIT_XY[1],
                          static=False, color=(0.9, 0.55, 0.05)))
@@ -677,7 +901,7 @@ def build_city_xml(args, seed):
     parts.append('\n')
     parts.append(DRONE_TEMPLATE.format(sx=sx, sy=sy, sz=DRONE_SPAWN_Z))
     parts.append('\n  </world>\n</sdf>\n')
-    return "".join(parts), waypoints, path, mh_bounds, village_bounds
+    return "".join(parts), waypoints, path, mh_bounds, village_bounds, spots
 
 
 def main():
@@ -698,7 +922,7 @@ def main():
                      help="마을 구역 생략 (빠른 반복 테스트용)")
     args = ap.parse_args()
 
-    xml_text, waypoints, path, mh_bounds, village_bounds = build_city_xml(args, args.seed)
+    xml_text, waypoints, path, mh_bounds, village_bounds, landing_spots = build_city_xml(args, args.seed)
     validate_xml(xml_text, f"city seed{args.seed}")
 
     if args.out:
@@ -711,7 +935,9 @@ def main():
         f.write(xml_text)
 
     wp_data = {"start_xy": list(START_XY), "target_xy": list(TARGET_XY),
-               "path_nodes": path, "waypoints_xy": [list(w) for w in waypoints]}
+               "path_nodes": path, "waypoints_xy": [list(w) for w in waypoints],
+               "landing_spots": [{"x": s["x"], "y": s["y"], "label": s["label"],
+                                   "kind": s["kind"], "note": s["note"]} for s in landing_spots]}
     if mh_bounds is not None:
         gx_min, gx_max, gy_min, gy_max = mh_bounds
         # 맨해튼풍 구역 중심 — 경로계획엔 안 쓰이고, click-to-retarget으로 목적지를 바꿀 때
@@ -742,6 +968,9 @@ def main():
     if village_bounds is not None:
         print(f"[ok] 마을 구역 중심 -> ({wp_data['village_district_center_xy'][0]}, "
               f"{wp_data['village_district_center_xy'][1]}) — 클릭 리타겟용 참고 좌표")
+    print(f"[ok] 배송 목적지 후보 {len(landing_spots)}곳 (클릭 리타겟용):")
+    for s in landing_spots:
+        print(f"     - ({s['x']:>7.1f}, {s['y']:>7.1f})  {s['label']}  [{s['kind']}]")
 
 
 if __name__ == "__main__":
