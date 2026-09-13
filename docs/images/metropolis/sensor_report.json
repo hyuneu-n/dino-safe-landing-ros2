@@ -1,0 +1,86 @@
+[
+  {
+    "id": "pocket_park",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 5.783392906188965,
+    "depth_min": 5.289419651031494,
+    "depth_max": 11.620028495788574
+  },
+  {
+    "id": "civic_plaza",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 3.476320266723633,
+    "depth_min": 7.663231372833252,
+    "depth_max": 11.560028076171875
+  },
+  {
+    "id": "street_canyon",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 1.8250408172607422,
+    "depth_min": 10.004983901977539,
+    "depth_max": 11.830028533935547
+  },
+  {
+    "id": "depot",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 1.2000083923339844,
+    "depth_min": 10.464224815368652,
+    "depth_max": 11.83002758026123
+  },
+  {
+    "id": "freight_yard",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 2.6800098419189453,
+    "depth_min": 9.080016136169434,
+    "depth_max": 11.760028839111328
+  },
+  {
+    "id": "warehouse_court",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 2.6800098419189453,
+    "depth_min": 9.080016136169434,
+    "depth_max": 11.760028839111328
+  },
+  {
+    "id": "town_green",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 3.6363325119018555,
+    "depth_min": 7.663231372833252,
+    "depth_max": 11.720027923583984
+  },
+  {
+    "id": "market_parking",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 1.7550249099731445,
+    "depth_min": 10.004977226257324,
+    "depth_max": 11.760026931762695
+  },
+  {
+    "id": "residential_lane",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 1.9050426483154297,
+    "depth_min": 10.004981994628906,
+    "depth_max": 11.910028457641602
+  },
+  {
+    "id": "garden_edge",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 3.369617462158203,
+    "depth_min": 8.112445831298828,
+    "depth_max": 11.910029411315918
+  },
+  {
+    "id": "construction",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 3.0850439071655273,
+    "depth_min": 8.654980659484863,
+    "depth_max": 11.740028381347656
+  },
+  {
+    "id": "promenade",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 3.6963233947753906,
+    "depth_min": 7.663231372833252,
+    "depth_max": 11.780029296875
+  }
+]

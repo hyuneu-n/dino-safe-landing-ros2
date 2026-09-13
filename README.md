@@ -10,6 +10,28 @@ ROS 2 Humble).
 > 한 작업 상세, 남은 작업, 사용자가 요청한 다음 방향(맵 꾸미기, Unity 전환 검토 등)이
 > 정리돼 있다.
 
+## 현재 시연 환경: Connected Metropolis (2026-09-14)
+
+뉴욕풍 도심 → 공장·물류 지구 → 주거 타운을 이어 붙인 새 도시가 기본 데모 환경이다.
+건물 63동, 수변 산책로·텃밭·공사장, 서로 다른 장애물이 있는 배송 목적지 12곳을 포함한다.
+4곳은 지정 좌표 자체가 사람·차량·자재로 막혀 있어 비전으로 주변 공간을 찾아야 한다.
+
+```bash
+bash run_city_demo.sh 0 world   # 환경만 둘러보기
+bash run_city_demo.sh 0         # 탐지기·미션·RViz 포함
+```
+
+<p align="center">
+  <img src="docs/images/metropolis/downtown.png" width="48%" alt="New York inspired downtown in Gazebo Classic">
+  <img src="docs/images/metropolis/industrial.png" width="48%" alt="Connected warehouse and freight district">
+</p>
+<p align="center">
+  <img src="docs/images/metropolis/town.png" width="48%" alt="Residential town with gardens">
+  <img src="docs/images/metropolis/freight_yard_down.png" width="48%" alt="Actual downward RGB view of an occupied delivery target">
+</p>
+
+[실행·목적지·검증·남은 과제](docs/CITY_ENVIRONMENT.md). 아래의 기존 비교실험 수치는 이전 평가 월드의 결과이며 새 도시 성능 수치가 아니다.
+
 ## 뭐가 새로운가
 
 | 축 | 이 프로젝트 | 공개 오픈소스 |
@@ -63,7 +85,7 @@ RViz의 "Publish Point" 툴로 클릭해서 바꿀 수 있다** — 드론이 �
 <p align="center"><sub>왼쪽: DINOv2 패치 특징을 PCA로 3채널에 투영한 시각화 (표면별로 색이 갈린다).
 오른쪽: 하강캠에 얹은 안전 착륙점 오버레이(노란 원 = 최종 선택된 착륙점).</sub></p>
 
-## 절차생성 환경 3종 (다양한 목적지)
+## 이전 절차생성 환경 3종 (보존된 버전)
 
 같은 알고리즘이 서로 성격이 다른 도심 환경에서도 통하는지 보려고, 단일 회랑 데모 말고
 **격자 대도시 하나**를 만들었고, 그 안에 서로 다른 밀도·도로 구조를 가진 구역 3개를 붙였다

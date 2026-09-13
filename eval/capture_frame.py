@@ -50,7 +50,9 @@ class FrameCapture(Node):
         self.create_subscription(RosImage, CAM_TOPICS[cam], self.on_rgb, 5)
         if self.need_depth:
             self.create_subscription(RosImage, "/drone/down_depth/depth/image_raw", self.on_depth, 5)
-        self.cli.wait_for_service()
+        if not self.cli.wait_for_service(timeout_sec=20.0):
+            self.destroy_node()
+            raise RuntimeError("Gazebo set_entity_state service unavailable after 20 seconds")
         self.t0 = self.get_clock().now()
         self.timer = self.create_timer(0.2, self.tick)
 
