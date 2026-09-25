@@ -1,255 +1,148 @@
-# 인수인계 문서 (다른 AI 세션이 이어받을 때 이것만 읽으면 됨)
+# Codex 데스크톱 앱 인수인계
 
-> **2026-09-14 업데이트 — 다음 세션은 [CITY_ENVIRONMENT.md](CITY_ENVIRONMENT.md)를 먼저 확인.**
-> 사용자가 Gazebo Classic에서 환경 제작을 자율 진행하도록 요청했다. `worlds/generate_metropolis.py`를 새로 작성해
-> 도심→공장·물류→주거 타운을 연결했고, `run_city_demo.sh`의 기본 생성기를 교체했다.
-> 지상 목적지 12곳 중 4곳은 지정 좌표가 점유된 시나리오다. 기존 생성기와 핵심 비전·미션 알고리즘은 보존했다.
-> 환경만 보려면 `bash run_city_demo.sh 0 world`. 자동 배치 검사와 Gazebo RGB/depth 검증 도구를 추가했다.
-> **대시보드·반복 배송·사용자 장애물 조작은 아직 미구현. 새 도시의 종단 간 착륙 성공률도 아직 측정하지 않았다.**
-> 아래 본문은 9월 11일 기준 이력이며, 새 도시의 구조·실행법은 위 문서를 따른다.
+기준: **2026-09-23**. 이 문서가 현재 작업 상태의 기준이다. 예전 내용을 누적한 인수인계는 [보관본](archive/HANDOFF_before_desktop_20260915.md)에 있다. 보관본의 건물 수·경로·우선순위는 최신 상태로 사용하지 않는다.
 
+> **2026-09-23 기술 방향 및 구현 갱신:** 지도교수 피드백의 **명시적인 경로 생성** 요구에 따라 전방 Depth 비용 지도 → 1·2·3스텝 후보 → 첫 목표 실행 → 재계획 구조를 구현했다. 기본은 horizon 2이며 기존 좌·중·우 반응형 회피는 비교군으로 보존했다. 순항 DINO 결합은 아직 실험 전이다. [구현 및 예비 결과](PATH_PLANNING_IMPLEMENTATION_20260923.md), [녹취 분석과 설계](PROFESSOR_FEEDBACK_AND_PATH_PLANNING.md)를 함께 본다.
 
-> 작성: 2026-09-11. 이 문서는 "지금까지 뭘 했고, 뭐가 남았고, 다음에 뭘 해야 하는지"를
-> 새 세션이 이 대화 기록 없이도 파악할 수 있게 만든 것이다. `README.md`는 사용자용
-> 소개서, `CONTEXT.md`는 설계 결정 이력, **이 문서는 작업 인수인계용**.
+## 1. 가장 먼저 알아야 할 사용자 결정
 
-## 1. 프로젝트 한 줄 정의
+- 사용자는 **현재 맵에 만족하며 환경 제작을 이 정도로 마무리**한다고 명시했다. 임의로 맵을 더 확장하거나 캠퍼스를 다시 디자인하지 않는다.
+- **Depth-only 지역 경로 생성 1차 버전**을 구현했다. 다음은 반복 실험 → legacy 기준선 → DINO 결합 비교 순서다.
+- 이번 요청은 README 대폭 개편, 데스크톱 전환용 상세 인수인계, 새 지도교수님에게 설명할 종합설계 첫 발표 PPT 제작이다.
+- 사용자는 자율 편집과 불필요한 확인 생략을 원한다. 이미 허용된 가역 작업은 진행한다. 다만 실제 앱의 관리형 권한·명령 승인 규칙을 해제했다고 말하지 않는다.
+- 한국어로 소통한다. 기능을 완성한 것과 제안한 것, 렌더링한 것과 자율비행 검증한 것을 구분한다.
 
-배송 드론이 목적지 근처에 도착한 뒤, **RGB+depth 카메라만으로 현재 장면을 분석해**
-차·사람·장애물을 피한 안전한 빈 공간을 찾아 정밀 착륙하는 시스템. Gazebo Classic 11 +
-ROS 2 Humble. 졸업작품(캡스톤), 마감은 **2026년 12월 말**, 그 전까지 **격주로 중간 발표**.
-시간 여유는 있는 편(4개월+) — 급하게 땜질할 필요 없음.
+## 2. 프로젝트 목적과 현재 정확한 설명
 
-핵심 기여: DINOv2 patch feature(semantic) + depth(geometric) **융합** — 둘 다 따로는
-공개된 게 있지만 융합해서 공개 코드로 낸 건 2026-08 조사 기준 없었음.
+배송 목적지 좌표만으로는 그 자리에 사람·차량·적재물이 있는지 알 수 없다. **RGB-D로 장애물과 빈 공간을 판단해 목적지 근처의 안전 착륙점을 고르는 시스템**을 만든다.
 
-## 2. 저장소 / 환경
+DINOv2 특징 군집과 depth를 결합한다. 객체 이름을 분류하는 YOLO식 검출은 구현하지 않았다. 위치 입력은 Gazebo odom, 비행은 `set_entity_state` 위치 지정이다. VIO/SLAM에 의한 완전한 비전 전용 위치 추정, 비행 동역학, 실기체 제어를 구현한 것으로 설명하지 않는다.
 
-- GitHub: `git@github.com:hyuneu-n/dino-safe-landing-ros2.git` (브랜치 `main`)
-- 실제 작업 경로: WSL2 Ubuntu-22.04, `~/safe_landing/` (Windows에서
-  `\\wsl.localhost\Ubuntu-22.04\home\hyuneun\safe_landing\`)
-- 스택: ROS 2 Humble + Gazebo Classic 11 (Ogre 1.9 렌더러), Python 3.10, PyTorch(DINOv2),
-  `venv_ros`에 rclpy/PIL 등
-- `git log`가 짧아 보이는 이유: 히스토리를 한 번 squash해서 push함(`5bf7f43 Initial commit`).
-  이 세션(개발 세션 기준)에서 한 상세 작업 이력은 여기(이 문서)와 각 파일 상단 docstring의
-  날짜 붙은 주석에만 남아있음 — git blame으로 "언제 왜 바뀌었는지" 추적이 잘 안 되니,
-  **파일 안의 docstring/인라인 주석을 먼저 읽을 것** (특히 `worlds/generate_city.py`,
-  `worlds/generate_world.py`).
+목표 시연은 목적지 선택 → 이동 중 회피 → 현장 스캔 → 빈 공간 선택 → 사람 개입 시 재평가 → 착륙 또는 대기다. 이 전체 흐름은 아직 검증되지 않았다.
 
-## 3. 빠른 실행
+## 3. 데스크톱에서 이어받기
+
+같은 WSL 폴더 **`/home/hyuneun/safe_landing`**를 연다. Windows 경로는 기존 문서상 `\\wsl.localhost\Ubuntu-22.04\home\hyuneun\safe_landing`이다. 배포판 이름이 다르면 현재 WSL 이름을 확인한다.
+
+새 앱 첫 메시지로 다음을 붙여 넣으면 된다.
+
+> `docs/HANDOFF.md`, `docs/PATH_PLANNING_IMPLEMENTATION_20260923.md`, `docs/PROFESSOR_FEEDBACK_AND_PATH_PLANNING.md`를 먼저 읽어줘. 맵 제작은 완료했고 Depth-only 지역 경로 생성 1차 버전과 H1/H2/H3 n=1 예비 비교까지 끝났어. 다음은 반복 실험, legacy 비교, 순항 DINO 결합 비교야. DINO가 현재 순항 계획에 들어간 것으로 과장하지 말고 기존 변경사항을 보존해줘.
+
+첫 확인은 `git status --short`, 최신 HANDOFF, PROJECT_STATUS, 발표 자료 README다. 사용자가 추가한 `docs/.obsidian/` 등 알 수 없는 파일은 임의 삭제하지 않는다. 이번 작업 중 커밋·푸시를 수행하지 않았다. 기존 작업 트리에 미커밋 코드·이미지가 많으므로 새 체크아웃/브랜치 이동/정리 전에 변경분을 보존한다.
+
+## 4. 환경과 실행
+
+| 항목 | 현재 경로/구성 |
+|---|---|
+| 작업 경로 | `/home/hyuneun/safe_landing` |
+| Python/ROS 환경 | `/home/hyuneun/venv_ros`, `/opt/ros/humble/setup.bash` |
+| 시뮬레이터 | ROS 2 Humble + Gazebo Classic 11, WSLg |
+| 맵 생성물 | `worlds/generated/metropolis_seed0.world`, 옆 `_assets/`, `.waypoints.json` |
+| 환경 영상 | `artifacts/metropolis_tour/metropolis_flythrough.mp4` |
+| 영상 규격 | 60초, 1280×720, 24fps, H.264, 1,440프레임, 43,656,805 bytes |
+| 실행 로그 | `logs/city_*.log` |
+| 센서 검증 이미지 | `docs/images/metropolis/` |
+| 발표 자료 | `docs/presentation/README.md` 참조 |
 
 ```bash
-# 격자도시 + 맨해튼 + 마을 + 배송 목적지 9곳 전체 데모
-cd ~/safe_landing
-bash run_city_demo.sh 0          # seed=0, RViz 포함
-bash run_city_demo.sh 0 norviz   # RViz 없이
-
-# 월드만 재생성해서 확인하고 싶을 때
-source /opt/ros/humble/setup.bash
-python3 worlds/generate_city.py --seed 0 --mesh --out /tmp/city.world
-# --no-manhattan / --no-village 로 특정 구역 생략 가능 (빠른 반복용)
+cd /home/hyuneun/safe_landing
+bash run_city_demo.sh 0 world   # 환경 미리보기, 드론 자동 출발 없음
+bash run_city_demo.sh 0         # 탐지기 + 기존 기본 미션 + RViz
+bash run_city_demo.sh 0 norviz  # RViz 제외
 ```
 
-Gazebo/gzserver를 스크립트로 죽일 때 **`pkill -f gazebo`처럼 "gazebo"라는 문자열이 들어간
-패턴을 쓰면 안 됨** — bash -lc로 감싼 명령어 자체의 텍스트에 "gazebo"가 들어있으면
-자기 자신을 죽여버림(이 세션에서 몇 번 당함). `pkill -x gzserver`/`pkill -x gazebo`처럼
-정확한 프로세스명 매치(`-x`)를 쓸 것.
+기본 미션 경유점은 **창고 (-210,-88) → 도심 대로 → East Gate (150,0)**다. 새 경로의 종단 간 비행 성공을 검증한 것은 아니다. `world` 모드부터 확인한다.
 
-## 4. 아키텍처
+GUI는 `GAZEBO_MASTER_URI`(미지정 시11345)로 접속한다. 세션 환경에 이 변수가 이미 있을 수 있다. 다른 서버가 포트를 사용하면 실행기가 중단한다. 전체 Gazebo 프로세스를 `pkill`하지 않는다. 필요하면 별도 포트와 `ROS_DOMAIN_ID`를 지정한다.
 
+검증 서버는 `VALIDATION_MASTER_URI`/`VALIDATION_ROS_DOMAIN_ID`(기본11366/66), 영상 서버는 `TOUR_MASTER_URI`/`TOUR_ROS_DOMAIN_ID`(기본11469/169)를 사용한다. GUI의 환경변수를 그대로 상속해 충돌했던 문제를 해결한 구성이다. 실행한 스크립트는 자신이 만든 서버만 종료한다. 이전 앱의 실행 세션 ID나 PID를 새 세션에서 유효하다고 가정하지 않는다.
+
+WSLg에서는 `LIBGL_ALWAYS_SOFTWARE`, `GALLIUM_DRIVER`를 unset하는 현재 실행기를 사용한다. 외부 Fuel 모델 데이터베이스는 localhost의 닫힌 포트로 지정해 불필요한 다운로드를 막는다. 현재 생성 맵에는 외부 에셋 다운로드가 필요 없다.
+
+## 5. 맵 구조와 보존할 설계
+
+- 약 2.5×1.9km, seed0 건물148동·목적지22곳. 지정 좌표가 점유된 상황은4곳.
+- 뉴욕풍 도심, 공장·물류 야드, 상점, 타운, 비격자 외곽 주거지, 강 양안, 높이24m 고가도로·34m 사장교·270도 램프, 산동네.
+- SkyDrop 물류창고가 실제 드론 생성 위치이며 manifest `origin`, `start_xy`, `waypoints_xy`에 반영된다.
+- 맥도날드·써브웨이 간판은 메시 문자. 학교는 사용자 사진3장의 원통 유리 타워, 아치 강의동, 회색 지붕, 노란 포인트 외벽, 줄무늬 광장, 분수·계단 정원을 반영한 창작 배치다.
+- 캠퍼스 목적지 `(340,330,z=12)`. 다른 높이 있는 목적지는 교량34m·산마당36m·능선96m. 총4곳은 기존 제어기 수정 전 자동 미션에 사용하지 않는다.
+- 목적지 manifest에는 `requires_elevation_support`, `flight_validated=False`가 있다. 새 목적지를 비행 검증 완료로 표시하지 않는다.
+
+| 파일 | 핵심 역할 |
+|---|---|
+| `worlds/generate_metropolis.py` | `Mesh`, `City`, 기본 구역·상황, SDF·DAE·manifest 생성 |
+| `worlds/metropolis_region.py` | 지형·도로·강·고가 구조·산동네, 지형 절개·평탄 패드 |
+| `worlds/metropolis_landmarks.py` | 물류창고·상점·출발점·간판 글리프, 캠퍼스 호출 |
+| `worlds/metropolis_campus.py` | 사진 기반 학교 메시, 광장·정원·진입로 |
+| `worlds/generate_world.py` | 이전 단일 회랑 평가 월드, 드론 SDF 템플릿 |
+| `worlds/generate_city.py` | 이전 격자도시, 과거 경로계획 구현; 현재 기본 생성기 아님 |
+
+주의할 지형 함정:
+
+1. 건물 생성 함수의 고도 인자 `z`가 창문 루프에 덮이지 않게 `base_z`를 보존한다.
+2. 도로/지형은 같은 DAE로 시각·충돌을 처리한다. 학교도 메시 충돌을 쓴다. 일반 수목·세부 구조 일부는 박스 근사다.
+3. 평탄 패드나 캠퍼스 기초 슬래브가 경사 진입로를 덮을 수 있다. 현재 캠퍼스는 진입부를 가리는 기초 박스를 없앴다.
+4. 경사로를 바꾸면 실제 down depth로 표면이 묻히지 않았는지 확인한다. 지형 샘플만 통과했다고 렌더링을 생략하지 않는다.
+5. 생성 `.world`의 메시 경로는 절대 경로다. 옮긴 컴퓨터/폴더에서 재생성한다.
+
+## 6. 코드의 현재 기술 상태
+
+`landing_detector.py`: RGB/depth/odom 수신 → DINOv2+K-means 특징 군집 → 깊이 장애물/표면 후보 → 후보 점수화 → `/landing/target` 발행. `/landing/overlay`, `/landing/dino_pca`, `/landing/candidates`, `/landing/target_marker`도 발행한다.
+
+`mission_controller.py`: `IDLE(선택) → TAKEOFF → CRUISE → ARRIVE → SCAN → DESCEND → LANDED`. 2026-09-23부터 기본 순항은 전방 Depth 지역 비용 지도와 horizon 2 후보 경로를 사용한다. 후보가 없으면 정지하고 제자리 yaw 재관측 후 다시 계획한다. 기본은 자동 이륙이며 `WAIT_FOR_DESTINATION=1`이면 `/clicked_point`가 올 때 물류센터에서 대기한다. 대기 중 선택은 기본 도심 경유점을 유지하고 최종 목적지를 붙이며, 비행 중 재지정만 현재 위치에서 직행한다.
+
+중요: manifest waypoint는 맵 생성 시 미리 계산한 전역 경유점이며 카메라가 생성한 경로가 아니다. `local_path_planner.py`가 각 경유점 사이의 지역 경로를 생성한다. 기존 `compute_avoid_offset()`은 `LOCAL_PLANNER_MODE=legacy` 비교군으로 보존했다. 현재 지역 비용 지도는 Depth-only이며 순항 DINO 결합은 아직 비교 실험 전이다. 구현·예비 결과는 [경로 생성 기록](PATH_PLANNING_IMPLEMENTATION_20260923.md)에 있다.
+
+다음은 **발견한 개선 후보이며 이번 문서/발표 작업에서 고치지 않았다**.
+
+- `SCAN`: 후보가 없으면 목적지 좌표·z=.30으로 하강하는 폴백. 안전 대기·중단으로 바꿔야 한다.
+- 착륙 후보가 오래되었거나 사라졌을 때 하강 금지와 재탐색이 충분하지 않다.
+- 안전 영역 연결요소 평균점이 구멍 속 장애물 위에 놓일 수 있다. footprint 여유와 실제 마스크 내부 여부를 확인해야 한다.
+- 탐지기 좌표 변환은 yaw0·GROUND_Z0. 높은 목적지와 카메라 자세를 처리하지 않는다.
+- 순항22m·스캔12m·최종z.3 고정. 새 지형 고도에 맞춘 항법이 아니다.
+- 지역 계획기는 NO_PATH 정지와 yaw 재관측을 구현했지만 모든 막다른 구조의 탈출이나 전역 재탐색을 보장하지 않는다.
+- 자동 침입자는 `(150,9)`에서5초에 걸쳐 착륙점으로 간다. 먼 목적지에는 비현실적인 속도다.
+- `LANDED` 유지 상태만 있고 반복 배송/복귀 미션은 없다.
+- `eval/our_method.py`는 탐지 로직의 수동 복제. 기술 수정 후 평가와 실행 코드 일치 여부를 확인한다.
+- 위치 지정 제어이므로 충돌 지오메트리가 있다는 것만으로 드론이 관통하지 않는다고 보장할 수 없다. 실제 접촉/관통 판정이 필요하다.
+
+## 7. 검증 근거와 재현
+
+```bash
+python3 -m unittest discover -s eval -p test_metropolis.py
+bash eval/validate_metropolis.sh /tmp/metropolis_validation
+bash eval/validate_metropolis.sh /tmp/seokyeong_final --landmarks-only
+bash eval/record_city_tour.sh artifacts/metropolis_tour --seconds 60 --fps 24
 ```
-Gazebo Classic (절차생성 월드) ── 4개 카메라 + odom ──▶ landing_detector.py
-                                                            │  DINOv2 패치특징 → K-means 표면군집
-                                                            │  depth → 지면거리/장애물 마스크
-                                                            ▼
-                                                     /landing/target (안전 착륙점)
-                                                            ▼
-                                              mission_controller.py (상태머신)
-                                        IDLE→TAKEOFF→CRUISE→ARRIVE→SCAN→DESCEND→LANDED
-                                        (CRUISE 중 전방 depth로 반응형 협곡 회피,
-                                         /clicked_point로 목적지 실시간 변경 가능)
-```
 
-핵심 알고리즘 파일: `landing_detector.py`(331줄), `dino_seg.py`(단독 실행 가능),
-`mission_controller.py`(379줄). **이번 세션엔 이 셋을 거의 안 건드림** — 전부 월드
-생성/시각화 쪽 작업이었음.
+- 배치 검사는 seed0/7/23에서 통과했다: 건물 겹침, 모델 이름, 메시 참조, 도로 경사≤16%, 대체4×4m 공간, 드론 시작점/manifest 일치.
+- 전체22개 목적지 RGB/depth를 검사했고, 마지막 학교 변경 후 새 랜드마크4곳과 학교 진입로3곳을 재검사했다. 산길5곳 검사는 이전 전체 검사에서 통과했다.
+- 현재 `docs/images/metropolis/sensor_report.json`은 전체 기존 결과에 변경 구역 최신 결과를 반영한22개 기록이다. 모든 노선의 비행 성공 보고서가 아니다.
+- MP4는 ffprobe로 길이/형식을 확인하고 전체 FFmpeg 디코딩 오류가 없는 것을 확인했다. 프레임별 카메라 경로 JSON이 옆에 있다.
+- 이전 평가 `eval/results_n24/comparison.json` 원자료24행을 확인했다: ours22/24, depth-only17/24, OpenLander11/24; 평균MOD3.69/2.22/2.63m. **정지 한 프레임의 안전점 선택 평가**다. 도시 배송 성공률이 아니다.
+- 2026-09-23 차단 회랑 예비 실험에서 H1/H2/H3를 각1회·45초 실행했다. H2만 목표10m 이내에 도달했고 SDF 명시 충돌체 관통 표본은0개였다. n=1이므로 최종 성공률이 아니다. 원자료는 `docs/results/path_planning_20260923/`에 있다.
+- 2026-09-23 물류창고→맥도날드 실제 미션을 추적 카메라로 녹화했다. 124.2초·1280×720·15fps, 최종 `LANDED`, 위치 `(171.5,67.3,0.3)`, DINOv2 후보12회 중앙값 사용, 지역 계획254회 정상·초기 센서 대기7회·명시 SDF 관통0회다. 산출물은 `artifacts/autonomous_mcdonalds_delivery/`에 있으며 한 코스1회 결과다.
+- `dashboard/`에는 실시간 ROS 웹 대시보드가 있다. 현재 위치/궤적, 미션·계획 상태, chase camera, landing overlay를 표시하고 목적지 카드는 `/clicked_point`를 발행한다. 현재 종단 간 검증된 맥도날드 카드만 활성화했다.
+- Dockerfile/entrypoint는 보존하지만 실제 빌드·실행 검증은 미완료다.
 
-## 5. 지금까지 완료된 것 (CONTEXT.md 작업번호 기준)
+## 8. 로컬 산출물과 이동 시 주의
 
-| # | 작업 | 상태 |
-|---|---|---|
-| 0 | git 백업 + GitHub push | ✅ (`hyuneu-n/dino-safe-landing-ros2`) |
-| 1 | 절차생성 월드 스크립트 | ✅ `worlds/generate_world.py`(단일회랑), `worlds/generate_city.py`(격자대도시) |
-| 2 | 클릭 → 목적지 지정 | ✅ RViz "Publish Point" → `/clicked_point` 구독, 라이브 검증됨 |
-| 3 | baseline 2개 + 3열 비교 | ✅ `eval/` — PX4식 depth-only 재구현 + OpenLander(ONNX) |
-| 4 | 랜덤시드 성공률 실험 | ✅ n=24: 우리 92%(MOD 3.69m) / depth-only 71%(2.22m) / OpenLander 46%(제시율83%) |
-| 5 | 통합 대시보드 / RViz 정리 | ⏳ **미착수** — 아래 6절 참고 |
-| 6 | Docker + README | ✅ 단, `docker build` 자체 실행 검증은 아직 안 됨(사용자 PC에서 1회 필요) |
-| 7 | (여유되면) 장애물 배치 인터랙션 | 미착수 |
+Git 제외: `worlds/generated*/`, `frames/`, `logs/`, `eval/results*/`, 일부 모델 가중치, `artifacts/metropolis_tour/`.
+같은 WSL 폴더를 데스크톱에서 열면 그대로 남아 있다. 새 clone에는 MP4·원자료·venv가 따라오지 않으므로 필요한 파일을 별도로 보존하거나 재생성한다.
 
-academic rigor(ablation study, 학습형 fusion)는 **사용자가 명시적으로 후순위 지정**
-("작품이 더 우선") — 나중에 시간 되면.
+현재 발표본은 `docs/presentation/safe_landing_review_compact.html`과 `safe_landing_review_compact.pptx`다. 사용자 제공 이전 발표 `종설_가장 마지막 진행상황.pptx`처럼 한 장의 정보 밀도를 높인 총10장 구성이다. 첫 장은 `종합설계 / 서현은` 표지이며, 본문마다 반복되던 소속·이름 머리말과 Part 전환장은 없다. ROS 토픽 경로·함수명 같은 원시 코드 표기도 청중이 이해할 수 있는 설명형 문구로 바꿨고 환경 영상도 없다. 약8~10분 대본은 `speaker_notes_compact.md`에 있으며 PPTX의 각 슬라이드 발표자 노트에도 내장했다. 생성 코드는 `build_html_deck_compact.py`와 `build_pptx_compact.py`, 전체 미리보기는 `overview_compact.jpg`다. 실제 Windows PowerPoint에서 10장 모두 열고 렌더링되는 것을 확인했다. 23장 V2와 16장 최초 버전은 이전 시안으로만 보존한다.
 
-### 5-1. 이번 세션(2026-09-04 ~ 09-11)에 한 것 — 절차생성 월드 확장사
+## 9. 발표와 다음 회의의 경계
 
-시간 순서대로:
+발표는 새 지도교수님이 처음 듣는 전제로 문제 정의, 목표, RGB-D 방법, 현재 구조, 환경이 다양한 이유, 구현 상태, 이전 정지 장면 평가, 검증 한계와 시연 구상을 설명한다. “최초/유일한 연구”나 “도시 전역 자율배송 완성”을 주장하지 않는다.
 
-1. **도로 타일 틈 버그 수정** — `road_tile()`이 등방 스케일만 지원해서 구간 길이가
-   타일폭의 배수가 아니면 틈이 생기던 버그. `cross_w`/`along_len` 분리 + 정확히
-   나눠떨어지는 타일링으로 해결.
-2. **격자도시 확장** — 6×5 → 11×7 노드, 여러 스트리트/애비뉴에 걸친 우회 강제
-   (`BLOCKED_STREET_GAPS`/`BLOCKED_AVENUE_GAPS`), 구역별 건물 밀도 차등(도심 밀집/교외 성김).
-3. **맨해튼풍 스카이스크래퍼 구역** (`build_manhattan_xml`) — 기존 도시 동쪽 100m,
-   반듯한 격자, SKY_MESHES(스카이스크래퍼 5종)만 사용(산업지구 탱크/굴뚝 없음).
-   ⚠️ 첫 시도(간격 32m)는 건물 폭이 원본 메시 비율 때문에 40~66m까지 뻥튀기돼서
-   서로 뚫고 들어가는 참사 — 간격 70m로 넓혀 해결.
-4. **비격자 마을** (`build_village_xml`) — 기존 도시 서쪽, 랜덤워크 폴리라인 길
-   (`generate_winding_path`) + 골목 2개, 낮은 집(BUILDING_MESHES)/나무 비정렬 배치.
-5. **도시-마을 연결로 + 집 밀도/색상** — `generate_connector_path`(steering 방식,
-   도착 보장)로 도시 교차로↔마을 연결. 집 색상: SDF `<material>`을 mesh visual에
-   얹으면 텍스처가 단색으로 덮인다는 걸 실측 확인 후 `VILLAGE_HOUSE_COLORS` 팔레트
-   (테라코타/크림/세이지그린/슬레이트블루 등, 원색 아님)로 집집마다 다르게 칠함.
-6. **Gazebo Sim(Fortress) 전환 타당성 스파이크** — `docs/fortress_spike_findings.md`에
-   상세. **결론: 이 WSL 환경에선 불가.** 카메라 센서 초기화 시 100% 크래시
-   (`Ogre::UnimplementedException: GL3PlusTextureGpu::copyTo` — Ogre-Next의 GL3Plus
-   백엔드가 WSLg의 Mesa/D3D12 변환 GL 스택 위에서 밉맵 텍스처 copy를 구현 안 해놓음).
-   Vulkan 백엔드도 미설치. **드라이버/렌더러 레벨 문제라 코드로 못 고침.**
-7. **README에 스크린샷 반영** — `docs/images/`에 7장 커밋(격자도시/맨해튼/마을/연결로/
-   DINO PCA/착륙오버레이).
-8. **배송 목적지 9곳 + 마을 중심 광장** — "목적지가 다 똑같다, 마을이 부실하다" 피드백.
-   `landing_spots_static()` + `build_village_xml()`이 만드는 마을 안 2곳 = 총 9곳:
-   helipad(기본 TARGET) / plaza(도심광장) / park(근린공원) / parking(마트주차장,
-   차량그리드+빈스톨) / vacant×2(산업단지 공터, 마을 어귀 공터) / street(맨해튼 협곡) /
-   rooftop(옥상패드, 18m) / green(마을회관 앞마당). 각 지점 이름표 깃발 마커(kind별
-   색상) + 외곽 목적지는 진입로 자동 연결. `waypoints.json`에 `landing_spots[]`
-   (x/y/label/kind/note)로 노출. 마을엔 `build_village_square()`(우물+마을회관 첨탑+
-   벤치+집 링)로 "중심이 있는 정착지" 느낌 추가.
-   ⚠️ 이 과정에서 잡은 버그: `generate_world.flat_patch()`가 `<ambient>`만 쓰고
-   `<diffuse>`가 없어서 밝은 색(회색/베이지 계열) 바닥 패치가 햇빛에 하얗게 날아감 —
-   `ground_patch()`(box 기반, ambient+diffuse 둘 다)로 교체해서 해결.
-   ⚠️ 옥상 패드(rooftop)는 카메라 앵글 문제로 스크린샷 검증을 못 했음 — 코드는
-   다른 피처와 동일 패턴이라 문제 없을 가능성 높지만, **다음 세션이 확인해볼 것**
-   (`(537, 105)` 근처, Manhattan 교차로).
+9월 18일 발표 피드백으로 이동 회피를 **경로 생성 문제로 확장**하기로 했다. 첫 통합 시연 코스, 세부 격자 크기·계획 주기·비용 가중치는 아직 실험 전 초기값이며 확정값으로 취급하지 않는다. 구현과 평가는 [교수 피드백 문서](PROFESSOR_FEEDBACK_AND_PATH_PLANNING.md)의 단계와 지표를 따른다.
 
-모든 검증은 "코드만 보고 넘어가지 않고 실제 Gazebo 띄워서 스크린샷/로그로 확인"
-방식으로 했음 — `eval/capture_frame.py --cam down/chase/iso --x .. --y .. --z .. --out ..`
-로 드론을 순간이동시켜 정지 프레임을 찍는 유틸리티. 새 세션도 이 방식을 따를 것을 권장.
+## 10. 다음 세션의 행동 순서
 
-## 6. 사용자가 지금(2026-09-11) 명시적으로 요청한 것 — 다음 세션이 꼭 볼 것
-
-### 6-1. 맵이 여전히 부실함 — 맵 꾸미기를 통째로 맡기고 싶어함
-
-사용자 원문 취지: "일단 여기까지 한 거, 맵이 아직 부실해. 전에 줬던 사진들 기반으로
-뉴욕시티스러운 느낌, 그리고 진짜 마을 느낌이 나는 그런 마을을 원해." 즉:
-
-- 지금 맨해튼 구역/마을 구역이 **컨셉은 맞지만 밀도·디테일이 부족**하다는 평가.
-  (참고: 이전 세션에 사용자가 실제 테헤란로/강남 항공사진/한강대로 인터체인지 사진을
-  첨부하며 "이런 밀도"를 요청한 적 있음 — 이 문서만 봐서는 그 이미지 파일 자체는 없으니,
-  **사용자에게 다시 요청하거나, 이미 커밋된 `docs/images/`의 결과물과 비교해 감을 잡을 것**.)
-- 사용자는 **"맵 꾸미기"를 하나의 델리게이트 가능한 작업 단위로 맡기고 싶어함** —
-  즉 다음 세션이 이 부분을 자율적으로 주도해서 밀도/디테일/현실감을 끌어올리는 걸
-  기대하고 있음. 구체적으로 부족한 것(다음 세션이 판단할 후보):
-  - 맨해튼: 건물 종류가 5종(SKY_MESHES)뿐이라 반복감이 있음, 도로 디테일(횡단보도,
-    신호등, 가로수) 없음
-  - 마을: 논밭/울타리/헛간 같은 "진짜 시골" 요소 없음, 집 종류가 BUILDING_MESHES
-    21종이지만 다 비슷한 실루엣
-  - 전반적으로 Kenney City Kit(CC0, 무료 팩 4종)의 한계 — 더 다양한 무료/저가 에셋
-    조사가 필요할 수 있음 (Poly Haven, itch.io, CGTrader 등 — 단 Gazebo Classic의
-    Ogre1 렌더러 한계로 "사실적인 PBR"까지는 안 됨, 아래 6-2 참고)
-
-### 6-2. 엔진/툴 대안 제안 요청 — 특히 "ROS + Unity"
-
-사용자 원문 취지: "혹시 다른 방법이 있다면, ROS 유니티 같은? 그걸로 옮기자는 제안을
-해봐." 아래는 이 문서 작성 시점에 정리해둔 예비 분석 — **다음 세션이 조사부터 다시
-시작할 필요 없도록 미리 적어둠**:
-
-**배경**: Gazebo Classic(Ogre1)은 렌더링 한계가 뚜렷하고(그림자/PBR 없음), Gazebo
-Sim/Fortress(Ogre2)는 이 WSL 환경에서 카메라 센서 크래시로 아예 못 씀(5-6번 항목).
-그래서 "완전히 다른 툴로 갈아타는 게 낫나?"라는 질문이 자연스럽게 나온 상황.
-
-**ROS + Unity 옵션 개요**:
-- Unity ↔ ROS 2 연동은 성숙한 공식 경로가 있음: **Unity Robotics Hub**
-  (`ROS-TCP-Connector` Unity 패키지 + `ROS-TCP-Endpoint` ROS 2 노드) — TCP로
-  메시지를 주고받고, `.msg`/`.srv`를 Unity C# 클래스로 자동 생성해주는 툴도 제공됨.
-- Unity는 HDRP/URP로 실제 PBR 렌더링(그림자, 반사, 라이트매핑)이 기본 지원 —
-  사용자가 원하는 "뉴욕시티 같은 사실적인 그림"이 렌더러 한계 없이 나옴.
-- 카메라/depth 센서: Unity 자체 카메라로 RGB는 바로 되고, depth는 커스텀 셰이더나
-  **Unity Perception 패키지**(원래 합성 데이터/세그멘테이션/깊이 GT 생성용으로 만들어진
-  공식 패키지)로 비교적 깔끔하게 얻을 수 있음 — 오히려 지금 GT를 기하투영으로 계산하는
-  것보다 더 정확한 ground truth를 자동으로 얻을 여지도 있음(평가 파이프라인에 도움될 수 있음).
-- 에셋 생태계: Unity Asset Store에 도시/자연 에셋이 훨씬 많고 저렴함(Kenney CC0보다
-  다양) — "돈 주고 좋은 에셋 사서 로직에 집중"하고 싶다는 사용자의 원래 니즈에 부합.
-
-**현실적으로 큰 비용**: 이건 렌더러만 바꾸는 게 아니라 **재플랫폼**임 —
-1. 월드 생성 파이프라인 전체 재작성 (지금 Python으로 SDF 텍스트 생성 → Unity 씬은
-   C# 스크립트로 절차생성하거나 에디터에서 수동 배치)
-2. 물리/충돌 엔진이 PhysX로 바뀜 — 드론 kinematic 이동(`SetEntityState` 서비스로
-   순간이동시키던 것) 로직을 Unity Rigidbody/Transform 기반으로 재작성
-3. 센서 파이프라인 재작성 (카메라 플러그인 → Unity 카메라 컴포넌트 + Perception 패키지)
-4. `landing_detector.py`/`mission_controller.py`는 ROS 토픽/서비스만 보므로 **메시지
-   타입이 같으면 이 둘은 거의 안 건드려도 될 가능성이 높음** — 이게 그나마 위안.
-
-이건 Fortress 포팅 시도(2~4일 추정, 실제론 렌더러 크래시로 시작도 못 함)보다 스코프가
-더 큼 — **Fortress처럼 "하루짜리 타당성 스파이크부터" 접근을 강력히 권장**: Unity 빈
-씬 + ROS-TCP-Endpoint 연결 + 카메라 토픽 하나 ROS에 퍼블리시하는 것까지만 먼저 만들어서
-실제로 되는지 확인한 다음에 전체 포팅 여부를 결정할 것. (Windows 네이티브에서 Unity
-Editor를 돌리고 WSL의 ROS 2와 통신하는 구조가 될 가능성이 높음 — 네트워킹 설정도
-스파이크 단계에서 같이 검증해야 함.)
-
-**다음 세션에게**: 이 분석을 사용자에게 보여주고, 시간 여유(12월 말 마감, 격주 발표)를
-고려했을 때 스파이크를 해볼지, 아니면 Gazebo Classic에 남아서 에셋/디테일만 개선할지
-**사용자에게 직접 물어볼 것** (AskUserQuestion 등으로) — 이건 프로젝트 방향을 바꾸는
-큰 결정이라 다음 세션이 임의로 정하면 안 됨.
-
-### 6-3. 최종 목표: "인터랙션 있는 시뮬레이션 환경"을 보여주기
-
-사용자는 게임 같은 화려한 인터랙션을 요구하는 건 아니지만, 최종적으로 **"보여줄 수
-있는" 시뮬레이션 환경**을 원함. 이미 있는 것: 클릭-리타겟(`/clicked_point`), 배송
-목적지 9곳(이번 세션에 추가, 아직 RViz에서 라벨/발견 가능성 약함). **자연스러운 다음
-단계는 5절의 "#5 통합 대시보드" 작업**과 겹침 — `landing_spots`를 읽어서 RViz
-`MarkerArray`로 이름표 띄우는 노드를 만들면, "지도 보고 목적지 클릭 → 드론이 날아가서
-착륙" 이라는 완결된 데모 흐름이 생김. 이게 사용자가 말한 "인터랙션"의 실체에 가장
-가까울 것으로 판단됨(다음 세션이 사용자와 확인).
-
-### 6-4. (나중, 지금 아님) 비행 중 시각화 강화 + YOLO 추가 여부
-
-사용자가 "이건 나중이고"라고 명시적으로 유예함 — **지금 착수하지 말 것**, 다만 기록:
-
-- 이미 있는 것: `dino_seg.py`의 DINOv2 PCA 시각화(`docs/images/dino_pca_viz.png`),
-  착륙점 오버레이(안전=녹/장애물=적/선택점=황, `docs/images/detection_overlay.png`),
-  `demo.rviz`에 하강캠 오버레이/PCA/포인트클라우드/멀티캠 레이아웃.
-- 사용자가 원하는 추가: 비행 중 "무엇을 detect했다"는 실시간 표시, 비행 경로 시각화.
-- YOLO 추가 여부: 사용자도 확신 없어함("추가해야하나? 이건 나중"). 판단 보류.
-  참고로 지금 방법론(DINOv2 무라벨 군집 + depth)의 핵심 차별점은 **라벨/사전학습
-  객체탐지기 없이** 처음 보는 장면에서 안전면을 찾는 것 — YOLO(지도학습 객체탐지)를
-  섞으면 "장애물 종류 식별"에는 도움되지만, 방법론의 "무라벨" 강점 서사와 충돌할 수
-  있음. 나중에 이 얘기 다시 나오면 이 트레이드오프를 먼저 짚어줄 것.
-
-## 7. 알려진 함정 (재현/디버깅 시간 아끼려면 읽을 것)
-
-1. **`pkill -f gazebo`류 자기자신 킬 버그** — 3절 참고.
-2. **`flat_patch()` 화이트아웃** — 밝은 색은 `ground_patch()`(box 기반) 쓸 것,
-   `flat_patch()`는 어두운 색(도로 등)에만 안전.
-3. **WSL 백그라운드 프로세스 관리** — Bash 툴의 `run_in_background: true`로 Gazebo를
-   띄우면 이상하게 즉시 죽는 경우가 있었음(원인 미확정, self-kill 버그와는 별개 현상일
-   수도 있음) — 안정적으로 되는 패턴: 한 번의 foreground 호출 안에서
-   "실행&(백그라운드) → sleep으로 로딩 대기 → 작업 → kill" 을 전부 처리.
-4. **mesh_tower()/mesh_house() 등은 target_h/native_h로 등방 스케일** — 목표 높이를
-   키우면 폭도 비례해서 커짐(원본 메시 비율 유지). 좁은 간격에 큰 target_h를 주면
-   건물이 서로 뚫고 들어갈 수 있음 — 새 구역 만들 때 간격을 넉넉히 잡을 것.
-5. **Gazebo Classic 11 + WSLg**: `unset LIBGL_ALWAYS_SOFTWARE GALLIUM_DRIVER` 필요
-   (run_city_demo.sh에 이미 있음), GPU 렌더링은 D3D12 변환 경유라 반복 기동 시
-   가끔 WSL 자체가 불안정해짐(RPC 에러) — 심하면 `wsl --shutdown` 후 재시도.
-
-## 8. 파일 빠른 참조
-
-| 경로 | 줄 수 | 역할 |
-|---|---|---|
-| `worlds/generate_city.py` | 977 | 격자도시+맨해튼+마을+배송목적지9곳 생성기 (이번 세션 핵심 작업물) |
-| `worlds/generate_world.py` | 750 | 단일회랑 절차생성 (원본, 거의 안 건드림) |
-| `landing_detector.py` | 331 | DINOv2+depth 핵심 알고리즘 (안 건드림) |
-| `mission_controller.py` | 379 | 비행 상태머신 (안 건드림) |
-| `run_city_demo.sh` | - | 격자도시 데모 원샷 실행 |
-| `docs/fortress_spike_findings.md` | - | Fortress 불가 판정 근거 |
-| `docs/images/` | - | README용 스크린샷 7장 |
-| `eval/capture_frame.py` | - | 정지 프레임 캡처 유틸(검증용, 새 세션도 활용 권장) |
+1. `WAIT_FOR_DESTINATION=1 bash run_city_demo.sh 0 norviz`와 `bash dashboard/run_dashboard.sh`로 관람객 흐름을 확인한다.
+2. 현재 n=1인 H1/H2/H3 차단 회랑 실험을 여러 seed·초기조건으로 반복한다.
+3. `LOCAL_PLANNER_MODE=legacy` 기준선도 같은 회랑과 지표로 측정한다.
+4. 목표 이탈, NO_PATH 지속, 센서 중단을 실패 유형으로 나눠 집계한다.
+5. 맥도날드 외 목적지에 전역 경로를 생성하고 코스별 종단 간 검증 후 대시보드 카드를 활성화한다.
+6. DINO+Depth와 Depth-only를 비교한 뒤 순항에서 DINO를 유지할 근거를 결정한다.

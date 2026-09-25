@@ -10,3 +10,7 @@ worlds/generated*/
 eval/models/*.onnx
 eval/models/*.blob
 eval/results*/
+
+# Reproducible rendered videos and their generated scene assets
+artifacts/metropolis_tour/
+artifacts/autonomous_*/

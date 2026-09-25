@@ -425,6 +425,8 @@ def extend_region(city,Mesh,tree,vehicle):
     region=Region(city,Mesh,tree,vehicle)
     region.expressways()
     region.west_neighborhood()
+    from metropolis_landmarks import add_landmarks
+    add_landmarks(region)
     region.hill_town()
     region.terrain()
     city.terrain_sampler=region.terrain_height

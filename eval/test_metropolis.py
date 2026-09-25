@@ -32,13 +32,15 @@ class CityLayoutTest(unittest.TestCase):
             with self.subTest(seed=seed),tempfile.TemporaryDirectory() as tmp:
                 with contextlib.redirect_stdout(io.StringIO()):
                     city,data=generate(Path(tmp)/'city.world',seed)
-                self.assertEqual(len(data['landing_spots']),18)
+                self.assertEqual(len(data['landing_spots']),22)
                 self.assertEqual(sum(s['nominal_target_blocked'] for s in data['landing_spots']),4)
                 for s in data['landing_spots']:
                     if s['kind']=='elevated':continue
                     ax,ay=city.audit_clearings[s['id']]
                     for dx,dy in [(0,0),(-2,-2),(-2,2),(2,-2),(2,2)]:
                         self.assertLess(abs(city.terrain_sampler(ax+dx,ay+dy)-s.get('z',0)),.15,s['id'])
+                self.assertEqual(data['start_xy'],data['waypoints_xy'][0])
+                self.assertEqual(data['origin']['id'],'launch_depot')
                 buildings=data['buildings']
                 for i,a in enumerate(buildings):
                     for b in buildings[i+1:]:
@@ -53,6 +55,8 @@ class CityLayoutTest(unittest.TestCase):
                         self.assertLessEqual(abs(b[2]-a[2])/length,.16,road['id'])
                     self.assertTrue(all(math.isfinite(v) for p in points for v in p))
                 root=ET.parse(city.out)
+                spawn=list(map(float,root.findtext('.//model[@name="delivery_drone"]/pose').split()))
+                self.assertEqual(spawn[:2],data['start_xy'])
                 names=[m.get('name') for m in root.findall('.//world/model')]
                 self.assertEqual(len(names),len(set(names)))
                 for uri in root.findall('.//mesh/uri'):

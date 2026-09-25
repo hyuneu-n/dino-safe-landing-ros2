@@ -9,8 +9,12 @@ mission_controller.py — 배송 드론 미션 상태머신 (Gazebo Classic + RO
 구독:
   /landing/target   geometry_msgs/PointStamped   (착륙지 탐지 노드가 발행한 안전 착륙점, world frame)
 발행:
-  /mission/status   std_msgs/String              (현재 상태)
-  /mission/setpoint geometry_msgs/PoseStamped    (드론 목표 위치, 디버그용)
+  /mission/status          std_msgs/String              (현재 상태)
+  /mission/setpoint        geometry_msgs/PoseStamped    (드론 목표 위치, 디버그용)
+  /planning/status         std_msgs/String              (후보 수, 비용 성분, 처리 시간)
+  /planning/local_costmap  nav_msgs/OccupancyGrid       (depth 기반 지역 비용 지도)
+  /planning/candidates     visualization_msgs/MarkerArray (전체 후보/탈락/선택 경로)
+  /planning/selected_path  nav_msgs/Path                (선택된 짧은 경로)
 
 실행:
   source /opt/ros/humble/setup.bash
@@ -19,14 +23,21 @@ mission_controller.py — 배송 드론 미션 상태머신 (Gazebo Classic + RO
 import json
 import math
 import os
+import time
 import numpy as np
 import rclpy
 from rclpy.node import Node
 from gazebo_msgs.srv import SetEntityState
 from geometry_msgs.msg import PointStamped, PoseStamped, TransformStamped
+from nav_msgs.msg import OccupancyGrid, Path
 from sensor_msgs.msg import Image as RosImage
 from std_msgs.msg import String
 from tf2_ros import TransformBroadcaster
+from visualization_msgs.msg import Marker, MarkerArray
+
+from local_path_planner import (
+    PlannerConfig, local_to_world, plan_local_path, world_to_local,
+)
 
 DRONE_NAME = "delivery_drone"
 RATE_HZ = 30.0
@@ -47,11 +58,25 @@ INTRUDER_NAME = "person_intruder"
 INTRUDER_TRIGGER_ALT = 11.5
 INTRUDER_WAIT_XY = (150.0, 9.0)
 INTRUDER_WALK_SEC = 5.0
+ENABLE_INTRUDER_DEMO = os.environ.get("ENABLE_INTRUDER_DEMO", "1").strip().lower() \
+    not in {"0", "false", "no", "off"}
 
 # ── 전방 depth 기반 반응형 회피 (차선/도로 인식 없이 depth만으로 판단) ──
 AVOID_RANGE_M = 22.0       # 전방 이 거리 안에 장애물이면 회피 시작
 AVOID_SWERVE_M = 9.0       # 회피 시 한 번에 이만큼 측면 오프셋
 AVOID_RECOVER_GAIN = 0.05  # 장애물 없을 때 센터라인 복귀 비율 / tick
+
+# ── 교수 피드백 반영: depth 비용지도 + receding-horizon 지역 경로 생성 ──
+# legacy: 기존 좌/중/우 오프셋, multistep: 1~3스텝 후보 경로 생성.
+LOCAL_PLANNER_MODE = os.environ.get("LOCAL_PLANNER_MODE", "multistep").strip().lower()
+LOCAL_PLANNER_HORIZON = max(1, min(3, int(os.environ.get("LOCAL_PLANNER_HORIZON", "2"))))
+LOCAL_PLANNER_REPLAN_SEC = float(os.environ.get("LOCAL_PLANNER_REPLAN_SEC", "0.25"))
+LOCAL_PLANNER_SENSOR_TIMEOUT_SEC = float(os.environ.get("LOCAL_PLANNER_SENSOR_TIMEOUT_SEC", "0.8"))
+LOCAL_PLANNER_RECOVERY_YAW_DEG = float(os.environ.get("LOCAL_PLANNER_RECOVERY_YAW_DEG", "20"))
+LOCAL_PLANNER_RECOVERY_MAX = int(os.environ.get("LOCAL_PLANNER_RECOVERY_MAX", "6"))
+LOCAL_PLANNER_LOG = os.environ.get("LOCAL_PLANNER_LOG", "")
+WAIT_FOR_DESTINATION = os.environ.get("WAIT_FOR_DESTINATION", "0").strip().lower() \
+    in {"1", "true", "yes", "on"}
 
 # ── 도시 확장 2단계 (2026-09-03): generate_city.py가 만든 격자 경로(웨이포인트)를 따라
 # 실제로 코너를 돌면서 난다. WAYPOINTS_FILE이 없으면 예전과 완전히 동일하게
@@ -83,6 +108,12 @@ class MissionController(Node):
         self.cli = self.create_client(SetEntityState, "/gazebo/set_entity_state")
         self.pub_status = self.create_publisher(String, "/mission/status", 10)
         self.pub_sp = self.create_publisher(PoseStamped, "/mission/setpoint", 10)
+        self.pub_plan_status = self.create_publisher(String, "/planning/status", 10)
+        self.pub_local_target = self.create_publisher(PoseStamped, "/planning/local_target", 10)
+        self.pub_costmap = self.create_publisher(OccupancyGrid, "/planning/local_costmap", 2)
+        self.pub_plan_candidates = self.create_publisher(
+            MarkerArray, "/planning/candidates", 2)
+        self.pub_selected_path = self.create_publisher(Path, "/planning/selected_path", 2)
         self.sub_target = self.create_subscription(
             PointStamped, "/landing/target", self.on_target, 10)
         self.sub_front_depth = self.create_subscription(
@@ -93,10 +124,26 @@ class MissionController(Node):
         self.tf_br = TransformBroadcaster(self)
 
         self.front_depth = None       # 최근 전방 depth (h, w) float32
+        self.front_depth_time = None  # ROS clock seconds — 센서 stale 시 안전 정지
         self.avoid_swerve_y = 0.0     # 현재 회피 측면 오프셋 (목표 y에 더해짐)
         self.last_avoid_log = 0.0     # 로그 throttle
 
+        self.planner_cfg = PlannerConfig(horizon=LOCAL_PLANNER_HORIZON)
+        self.last_plan_time = -math.inf
+        self.local_plan_target = None       # 선택 경로 첫 점(world xy)
+        self.local_plan_yaw = None
+        self.latest_plan = None
+        self.last_avoid_direction = 1.0
+        self.avoidance_active = False
+        self.recovery_attempts = 0
+        self.last_recovery_time = -math.inf
+        self.plan_log_file = None
+        if LOCAL_PLANNER_LOG:
+            os.makedirs(os.path.dirname(os.path.abspath(LOCAL_PLANNER_LOG)), exist_ok=True)
+            self.plan_log_file = open(LOCAL_PLANNER_LOG, "a", encoding="utf-8", buffering=1)
+
         self.waypoints = load_waypoints()   # [(x,y), ...] — generate_city.py 산출물 또는 직행 2점
+        self.default_waypoints = list(self.waypoints)
         self.wp_idx = 1                     # 0번(출발지)은 이미 거기 있으니 1번부터 목표
         self.heading = 0.0                  # 현재 진행 방향(rad) — 회피 오프셋 회전에 씀
         self.target_xy = self.waypoints[-1]  # 최종 목적지 — 클릭으로 재지정 가능 (on_click_point)
@@ -116,15 +163,220 @@ class MissionController(Node):
         self.get_logger().info("set_entity_state 서비스 대기 중...")
         self.cli.wait_for_service()
         self.get_logger().info("연결됨. 미션 시작.")
-        self.state = "TAKEOFF"
+        self.get_logger().info(
+            f"지역 경로 계획: mode={LOCAL_PLANNER_MODE}, horizon={LOCAL_PLANNER_HORIZON}, "
+            f"replan={LOCAL_PLANNER_REPLAN_SEC:.2f}s")
+        self.state = "IDLE" if WAIT_FOR_DESTINATION else "TAKEOFF"
+        if WAIT_FOR_DESTINATION:
+            self.get_logger().info("대시보드 목적지 선택 대기 중 (/clicked_point)")
         self.timer = self.create_timer(1.0 / RATE_HZ, self.tick)
 
     # ---- 전방 depth 수신 + 반응형 회피 결정 ----
     def on_front_depth(self, msg):
         try:
             self.front_depth = np.frombuffer(bytes(msg.data), np.float32).reshape(msg.height, msg.width)
+            self.front_depth_time = self.get_clock().now().nanoseconds * 1e-9
         except Exception:
             self.front_depth = None
+            self.front_depth_time = None
+
+    def _publish_costmap(self, costmap, stamp):
+        msg = OccupancyGrid()
+        msg.header.frame_id = "base_link"
+        msg.header.stamp = stamp
+        msg.info.resolution = float(costmap.resolution_m)
+        msg.info.width = costmap.width
+        msg.info.height = costmap.height
+        msg.info.origin.position.x = 0.0
+        msg.info.origin.position.y = float(costmap.y_min_m)
+        msg.info.origin.orientation.w = 1.0
+        msg.data = costmap.grid.astype(np.int8).ravel().tolist()
+        self.pub_costmap.publish(msg)
+
+    @staticmethod
+    def _line_marker(marker_id, namespace, rgba, width, stamp):
+        marker = Marker()
+        marker.header.frame_id = "world"
+        marker.header.stamp = stamp
+        marker.ns = namespace
+        marker.id = marker_id
+        marker.type = Marker.LINE_LIST
+        marker.action = Marker.ADD
+        marker.scale.x = width
+        marker.color.r, marker.color.g, marker.color.b, marker.color.a = rgba
+        marker.pose.orientation.w = 1.0
+        marker.lifetime.sec = 1
+        return marker
+
+    def _publish_plan_visuals(self, result, world_paths, selected_world, stamp):
+        delete = Marker()
+        delete.action = Marker.DELETEALL
+        markers = MarkerArray(markers=[delete])
+        valid = self._line_marker(1, "valid_candidates", (0.55, 0.65, 0.75, 0.22), 0.045, stamp)
+        blocked = self._line_marker(2, "blocked_candidates", (0.95, 0.18, 0.12, 0.20), 0.035, stamp)
+        for candidate, world in zip(result.candidates, world_paths):
+            dst = blocked if candidate.collision else valid
+            for a, b in zip(world[:-1], world[1:]):
+                for p in (a, b):
+                    point = PointStamped().point
+                    point.x, point.y, point.z = float(p[0]), float(p[1]), float(CRUISE_ALT)
+                    dst.points.append(point)
+        markers.markers.extend([valid, blocked])
+
+        if selected_world is not None:
+            chosen = self._line_marker(3, "selected_path", (0.12, 0.95, 0.30, 1.0), 0.20, stamp)
+            for a, b in zip(selected_world[:-1], selected_world[1:]):
+                for p in (a, b):
+                    point = PointStamped().point
+                    point.x, point.y, point.z = float(p[0]), float(p[1]), float(CRUISE_ALT + 0.15)
+                    chosen.points.append(point)
+            markers.markers.append(chosen)
+
+            target = Marker()
+            target.header.frame_id = "world"
+            target.header.stamp = stamp
+            target.ns = "local_target"
+            target.id = 4
+            target.type = Marker.SPHERE
+            target.action = Marker.ADD
+            target.pose.position.x = float(selected_world[1, 0])
+            target.pose.position.y = float(selected_world[1, 1])
+            target.pose.position.z = float(CRUISE_ALT)
+            target.pose.orientation.w = 1.0
+            target.scale.x = target.scale.y = target.scale.z = 0.75
+            target.color.r, target.color.g, target.color.b, target.color.a = 1.0, 0.8, 0.05, 1.0
+            target.lifetime.sec = 1
+            markers.markers.append(target)
+
+            path = Path()
+            path.header.frame_id = "world"
+            path.header.stamp = stamp
+            for p in selected_world:
+                pose = PoseStamped()
+                pose.header = path.header
+                pose.pose.position.x = float(p[0])
+                pose.pose.position.y = float(p[1])
+                pose.pose.position.z = float(CRUISE_ALT)
+                pose.pose.orientation.w = 1.0
+                path.poses.append(pose)
+            self.pub_selected_path.publish(path)
+        self.pub_plan_candidates.publish(markers)
+
+    def _log_plan(self, record):
+        if self.plan_log_file is not None:
+            self.plan_log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    def compute_local_plan(self, goal_world_xy):
+        """현재 RGB-D 관측 중 depth 기하로 지역 후보 경로를 만들고 첫 점을 저장한다."""
+        now = self.get_clock().now().nanoseconds * 1e-9
+        if now - self.last_plan_time < LOCAL_PLANNER_REPLAN_SEC:
+            return self.latest_plan
+        self.last_plan_time = now
+        stamp = self.get_clock().now().to_msg()
+        if (self.front_depth is None or self.front_depth_time is None or
+                now - self.front_depth_time > LOCAL_PLANNER_SENSOR_TIMEOUT_SEC):
+            self.local_plan_target = None
+            self.local_plan_yaw = None
+            self.latest_plan = None
+            status = {"status": "NO_SENSOR", "age_s": None if self.front_depth_time is None
+                      else round(now - self.front_depth_time, 3)}
+            self.pub_plan_status.publish(String(data=json.dumps(status, ensure_ascii=False)))
+            self._log_plan({"t": now, "position": self.pos, **status})
+            return None
+
+        goal_local = world_to_local(goal_world_xy, self.pos[:2], self.heading)
+        t0 = time.perf_counter()
+        result = plan_local_path(self.front_depth, goal_local, self.planner_cfg)
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        self.latest_plan = result
+        selected_world = None
+        world_paths = [local_to_world(c.points_xy, self.pos[:2], self.heading)
+                       for c in result.candidates]
+        if result.selected is not None:
+            selected_world = local_to_world(result.selected.points_xy, self.pos[:2], self.heading)
+            self.local_plan_target = (float(selected_world[1, 0]), float(selected_world[1, 1]))
+            self.local_plan_yaw = math.atan2(self.local_plan_target[1] - self.pos[1],
+                                             self.local_plan_target[0] - self.pos[0])
+            first_turn = float(result.selected.steering_deg[0])
+            obstacle_near = result.selected.min_clearance_m < 8.0
+            # 처음 우회를 시작한 쪽을 장애물을 완전히 벗어날 때까지 보존한다.
+            # 타워 측면에서 목적지 쪽으로 자세를 되돌리는 조향을 새 우회 방향으로
+            # 오인하면 NO_PATH 복구가 장애물 안쪽으로 회전하는 문제가 생긴다.
+            if obstacle_near and not self.avoidance_active and abs(first_turn) > 1e-6:
+                self.last_avoid_direction = math.copysign(1.0, first_turn)
+                self.avoidance_active = True
+            elif not obstacle_near:
+                self.avoidance_active = False
+            self.recovery_attempts = 0
+            ps = PoseStamped()
+            ps.header.frame_id = "world"
+            ps.header.stamp = stamp
+            ps.pose.position.x, ps.pose.position.y = self.local_plan_target
+            ps.pose.position.z = CRUISE_ALT
+            ps.pose.orientation.w = 1.0
+            self.pub_local_target.publish(ps)
+        else:
+            self.local_plan_target = None
+            self.local_plan_yaw = None
+
+        if result.costmap is not None:
+            self._publish_costmap(result.costmap, stamp)
+        self._publish_plan_visuals(result, world_paths, selected_world, stamp)
+        selected = result.selected
+        status = {
+            "status": result.status,
+            "horizon": self.planner_cfg.horizon,
+            "plan_ms": round(elapsed_ms, 3),
+            "candidate_count": len(result.candidates),
+            "valid_count": sum(not c.collision for c in result.candidates),
+            "position": [round(v, 3) for v in self.pos],
+            "yaw_deg": round(math.degrees(self.heading), 3),
+            "goal_world": [round(float(v), 3) for v in goal_world_xy],
+            "selected_steering_deg": list(selected.steering_deg) if selected else None,
+            "total_cost": round(selected.total_cost, 5) if selected else None,
+            "goal_cost": round(selected.goal_cost, 5) if selected else None,
+            "clearance_cost": round(selected.clearance_cost, 5) if selected else None,
+            "turn_cost": round(selected.turn_cost, 5) if selected else None,
+            "unknown_cost": round(selected.unknown_cost, 5) if selected else None,
+            "min_clearance_m": round(selected.min_clearance_m, 3) if selected else None,
+            "valid_depth_fraction": round(result.costmap.valid_depth_fraction, 5)
+            if result.costmap else None,
+        }
+        self.pub_plan_status.publish(String(data=json.dumps(status, ensure_ascii=False)))
+        self._log_plan({"t": now, **status})
+        return result
+
+    def try_no_path_recovery(self):
+        """제자리 yaw 재관측. 이동하지 않고 새 방향의 depth가 들어온 뒤 다시 계획한다."""
+        now = self.get_clock().now().nanoseconds * 1e-9
+        if now - self.last_recovery_time < 0.5:
+            return False
+        if self.recovery_attempts >= LOCAL_PLANNER_RECOVERY_MAX:
+            return False
+        self.last_recovery_time = now
+        self.recovery_attempts += 1
+        delta = math.radians(LOCAL_PLANNER_RECOVERY_YAW_DEG) * self.last_avoid_direction
+        self.heading = math.atan2(math.sin(self.heading + delta), math.cos(self.heading + delta))
+        self.set_pose(self.pos[0], self.pos[1], CRUISE_ALT, yaw=self.heading)
+        # 회전 전 관측은 새 카메라 방향의 비용 지도로 사용할 수 없다.
+        self.front_depth = None
+        self.front_depth_time = None
+        self.local_plan_target = None
+        self.latest_plan = None
+        self.last_plan_time = -math.inf
+        event = {
+            "status": "RECOVERY_YAW",
+            "attempt": self.recovery_attempts,
+            "direction": int(self.last_avoid_direction),
+            "yaw_deg": round(math.degrees(self.heading), 3),
+            "position": [round(v, 3) for v in self.pos],
+        }
+        self.pub_plan_status.publish(String(data=json.dumps(event, ensure_ascii=False)))
+        self._log_plan({"t": now, **event})
+        self.get_logger().warn(
+            f"지역 경로 없음 → 제자리 재관측 {self.recovery_attempts}/{LOCAL_PLANNER_RECOVERY_MAX} "
+            f"(yaw {math.degrees(self.heading):.1f}°)")
+        return True
 
     def compute_avoid_offset(self):
         """전방 depth를 좌/중/우 3등분 → 중앙에 장애물(AVOID_RANGE 안)이면 clearance 큰 쪽으로 swerve."""
@@ -170,13 +422,30 @@ class MissionController(Node):
                 f"목적지 클릭 무시 (state={self.state} — 도착 절차 시작 후엔 재지정 불가)")
             return
         self.target_xy = (msg.point.x, msg.point.y)
-        # 격자 경로 재탐색은 런타임 스코프 밖 — 클릭하면 현재 위치에서 새 목적지로 직행 2점
-        # 경로로 갈아탄다 (도로망을 안 따라가게 되지만, 반응형 depth 회피는 그대로 작동함)
-        self.waypoints = [tuple(self.pos[:2]), self.target_xy]
+        # 출발 대기 중 선택하면 검증된 기본 도심 경로를 유지하고 마지막 목적지만 붙인다.
+        # 이미 비행 중인 재지정은 현재 위치에서 직행하며 depth 지역계획기가 안전을 감시한다.
+        if self.state == "IDLE":
+            self.waypoints = list(self.default_waypoints)
+            if dist2(self.waypoints[-1], self.target_xy) > 0.1:
+                self.waypoints.append(self.target_xy)
+        else:
+            self.waypoints = [tuple(self.pos[:2]), self.target_xy]
         self.wp_idx = 1
         self.avoid_swerve_y = 0.0
-        self.get_logger().info(f"[클릭] 새 목적지 지정 (직행 경로로 전환): "
-                                f"({self.target_xy[0]:.1f}, {self.target_xy[1]:.1f})")
+        # 새 목적지를 바라본 뒤 그 방향에서 들어온 새 depth로 계획한다.
+        self.heading = math.atan2(self.target_xy[1] - self.pos[1],
+                                  self.target_xy[0] - self.pos[0])
+        self.front_depth = None
+        self.front_depth_time = None
+        self.local_plan_target = None
+        self.latest_plan = None
+        self.last_plan_time = -math.inf
+        self.set_pose(self.pos[0], self.pos[1], self.pos[2], yaw=self.heading)
+        route_kind = "기본 도심 경유 경로" if self.state == "IDLE" else "현재 위치 직행 경로"
+        self.get_logger().info(f"[클릭] 새 목적지 지정 ({route_kind}): "
+                               f"({self.target_xy[0]:.1f}, {self.target_xy[1]:.1f})")
+        if self.state == "IDLE":
+            self.state = "TAKEOFF"
 
     # ---- 착륙지 탐지 결과 수신 ----
     def on_target(self, msg: PointStamped):
@@ -265,13 +534,25 @@ class MissionController(Node):
 
     # ---- 메인 루프 ----
     def tick(self):
-        if self.state == "TAKEOFF":
+        if self.state == "IDLE":
+            self.say("WAITING_FOR_DESTINATION")
+            self.set_pose(self.pos[0], self.pos[1], self.pos[2], yaw=self.heading)
+
+        elif self.state == "TAKEOFF":
             self.say("TAKEOFF")
             wx0, wy0 = self.waypoints[0]
             if self.step_toward(wx0, wy0, CRUISE_ALT, SPEED_CRUISE):
                 self.state = "CRUISE"
+                if len(self.waypoints) > 1:
+                    wx1, wy1 = self.waypoints[1]
+                    self.heading = math.atan2(wy1 - self.pos[1], wx1 - self.pos[0])
+                    self.set_pose(self.pos[0], self.pos[1], self.pos[2], yaw=self.heading)
+                    # 이륙 중 yaw=0에서 촬영된 frame은 새 진행방향 계획에 쓰지 않는다.
+                    self.front_depth = None
+                    self.front_depth_time = None
                 self.get_logger().info(
-                    f"이륙 완료 → 자율 항법 시작 (경유지 {len(self.waypoints)}개, 전방 depth로 반응형 회피)")
+                    f"이륙 완료 → 자율 항법 시작 (경유지 {len(self.waypoints)}개, "
+                    f"지역 경로 계획 H{LOCAL_PLANNER_HORIZON})")
 
         elif self.state == "CRUISE":
             # 웨이포인트를 따라 비행 (차선/도로 인식 없이 좌표만 따라감 — generate_city.py가
@@ -280,20 +561,35 @@ class MissionController(Node):
             wx, wy = self.waypoints[self.wp_idx]
             dx, dy = wx - self.pos[0], wy - self.pos[1]
             dist_to_wp = math.hypot(dx, dy)
-            if dist_to_wp > 1e-3:
-                self.heading = math.atan2(dy, dx)
-
-            avoid_mag, _ = self.compute_avoid_offset()
-            # 회피 오프셋은 "진행방향 기준 왼쪽" 벡터로 적용 — 직선 구간이던 예전엔 이게
-            # 항상 +Y였는데, 코너를 도는 지금은 heading에 따라 회전해야 정확함.
-            perp_x, perp_y = -math.sin(self.heading), math.cos(self.heading)
-            lookahead = (SPEED_CRUISE / RATE_HZ) * 2.0
-            step_x = self.pos[0] + math.cos(self.heading) * lookahead + perp_x * avoid_mag
-            step_y = self.pos[1] + math.sin(self.heading) * lookahead + perp_y * avoid_mag
-
-            self.say(f"CRUISE wp{self.wp_idx}/{len(self.waypoints)-1} "
-                     f"pos=({self.pos[0]:.0f},{self.pos[1]:.0f}) hdg={math.degrees(self.heading):.0f}")
-            self.step_toward(step_x, step_y, CRUISE_ALT, SPEED_CRUISE, yaw=self.heading)
+            if LOCAL_PLANNER_MODE == "legacy":
+                if dist_to_wp > 1e-3:
+                    self.heading = math.atan2(dy, dx)
+                avoid_mag, _ = self.compute_avoid_offset()
+                perp_x, perp_y = -math.sin(self.heading), math.cos(self.heading)
+                lookahead = (SPEED_CRUISE / RATE_HZ) * 2.0
+                step_x = self.pos[0] + math.cos(self.heading) * lookahead + perp_x * avoid_mag
+                step_y = self.pos[1] + math.sin(self.heading) * lookahead + perp_y * avoid_mag
+                self.say(f"CRUISE legacy wp{self.wp_idx}/{len(self.waypoints)-1} "
+                         f"pos=({self.pos[0]:.0f},{self.pos[1]:.0f})")
+                self.step_toward(step_x, step_y, CRUISE_ALT, SPEED_CRUISE, yaw=self.heading)
+            else:
+                result = self.compute_local_plan((wx, wy))
+                if result is None or result.status != "OK" or self.local_plan_target is None:
+                    # 센서가 없거나 모든 후보가 막히면 제자리에서 정지한다.
+                    reason = "NO_SENSOR" if result is None else result.status
+                    recovering = reason == "NO_PATH" and self.try_no_path_recovery()
+                    if recovering:
+                        self.say(f"CRUISE REOBSERVE {self.recovery_attempts}/"
+                                 f"{LOCAL_PLANNER_RECOVERY_MAX}")
+                    else:
+                        self.say(f"CRUISE STOP — {reason}")
+                        self.set_pose(self.pos[0], self.pos[1], CRUISE_ALT, yaw=self.heading)
+                else:
+                    self.heading = self.local_plan_yaw
+                    tx, ty = self.local_plan_target
+                    self.say(f"CRUISE H{LOCAL_PLANNER_HORIZON} wp{self.wp_idx}/"
+                             f"{len(self.waypoints)-1} cost={result.selected.total_cost:.2f}")
+                    self.step_toward(tx, ty, CRUISE_ALT, SPEED_CRUISE, yaw=self.heading)
 
             if dist_to_wp < WAYPOINT_ARRIVE_DIST:
                 if self.wp_idx >= len(self.waypoints) - 1:
@@ -302,6 +598,16 @@ class MissionController(Node):
                 else:
                     self.wp_idx += 1
                     self.avoid_swerve_y = 0.0   # 새 구간 진입 — 회피 오프셋 리셋
+                    next_x, next_y = self.waypoints[self.wp_idx]
+                    self.heading = math.atan2(next_y - self.pos[1], next_x - self.pos[0])
+                    # 제자리에서 새 구간을 바라보고, 이전 방향의 depth는 폐기한다.
+                    self.set_pose(self.pos[0], self.pos[1], self.pos[2], yaw=self.heading)
+                    self.front_depth = None
+                    self.front_depth_time = None
+                    self.local_plan_target = None
+                    self.latest_plan = None
+                    self.last_plan_time = -math.inf
+                    self.recovery_attempts = 0
                     self.get_logger().info(f"경유지 통과 → 다음 구간 (wp {self.wp_idx})")
 
         elif self.state == "ARRIVE":
@@ -338,7 +644,8 @@ class MissionController(Node):
             tag = " [고정]" if self.descend_committed else ""
             self.say(f"DESCEND → ({tx:.1f},{ty:.1f}) alt={self.pos[2]:.1f}{tag}")
             # 데모: 일정 고도 통과 시 보행자가 착륙 예정지로 걸어 들어옴
-            if not self.intruder_active and self.pos[2] <= INTRUDER_TRIGGER_ALT:
+            if (ENABLE_INTRUDER_DEMO and not self.intruder_active
+                    and self.pos[2] <= INTRUDER_TRIGGER_ALT):
                 self.intruder_active = True
                 self.intruder_t0 = self.get_clock().now()
                 self.intruder_from = INTRUDER_WAIT_XY
@@ -363,6 +670,12 @@ class MissionController(Node):
             tx, ty, tz = self.landing_target
             self.set_pose(tx, ty, tz)
 
+    def destroy_node(self):
+        if self.plan_log_file is not None:
+            self.plan_log_file.close()
+            self.plan_log_file = None
+        return super().destroy_node()
+
 
 def main():
     rclpy.init()
@@ -371,8 +684,14 @@ def main():
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
+    except Exception:
+        # SIGTERM during an automated recording invalidates the ROS context before
+        # the executor returns. Treat only that shutdown race as a clean exit.
+        if rclpy.ok():
+            raise
     node.destroy_node()
-    rclpy.shutdown()
+    if rclpy.ok():
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":

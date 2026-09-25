@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SkyDrop Vision Delivery</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="mark">S</span><div><b>SKYDROP</b><small>VISION DELIVERY LAB</small></div></div>
+    <div class="status"><i id="dot"></i><span id="connection">ROS 연결 대기</span><strong id="phase">CONNECTING</strong></div>
+  </header>
+  <main>
+    <section class="map-panel panel">
+      <div class="section-title"><div><span>01</span><h1>배송 목적지를 선택하세요</h1></div><p>선택한 좌표까지 이동한 뒤 카메라로 안전한 착륙점을 다시 찾습니다.</p></div>
+      <div class="map-wrap"><canvas id="map"></canvas><div class="map-key"><b class="drone-key"></b>드론 <b class="route-key"></b>실제 궤적 <b class="target-key"></b>목적지</div></div>
+      <div id="destinations" class="destinations"></div>
+    </section>
+    <section class="vision-panel panel">
+      <div class="section-title compact"><div><span>02</span><h2>드론이 보고 있는 화면</h2></div><div class="tabs"><button class="active" data-camera="chase">비행 시점</button><button data-camera="landing">착륙 판단</button></div></div>
+      <div class="camera"><img id="camera" alt="실시간 드론 카메라"><div class="camera-empty">카메라 연결을 기다리는 중</div><div class="live">LIVE</div><div class="reticle"></div></div>
+      <div class="decision"><small>지금 내린 판단</small><strong id="decision">센서 연결을 기다리고 있습니다</strong><p id="reason">ROS 토픽이 수신되면 판단 근거가 여기에 표시됩니다.</p></div>
+    </section>
+    <section class="telemetry panel">
+      <div><small>고도</small><strong><span id="alt">—</span><em>m</em></strong></div>
+      <div><small>지역 계획</small><strong id="planner">—</strong></div>
+      <div><small>현재 위치</small><strong id="position">—</strong></div>
+      <div><small>선택 목적지</small><strong id="selected">선택 전</strong></div>
+    </section>
+  </main>
+  <div id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+{
+  "source": "eval/results_n24/comparison.json",
+  "verified_on": "2026-09-15",
+  "summary": {
+    "ours": {
+      "n": 24,
+      "picked": 24,
+      "success": 22,
+      "picked_rate": 100.0,
+      "success_rate": 91.66666666666666,
+      "mean_mod_m": 3.689839507051721
+    },
+    "depth_only": {
+      "n": 24,
+      "picked": 24,
+      "success": 17,
+      "picked_rate": 100.0,
+      "success_rate": 70.83333333333334,
+      "mean_mod_m": 2.2206232782925057
+    },
+    "openlander": {
+      "n": 24,
+      "picked": 20,
+      "success": 11,
+      "picked_rate": 83.33333333333334,
+      "success_rate": 45.83333333333333,
+      "mean_mod_m": 2.627630372703874
+    }
+  },
+  "seed0": {
+    "seed": 0,
+    "ours": {
+      "picked": true,
+      "success": true,
+      "mod_m": 3.642994733156354,
+      "u": 350.74001767620973,
+      "v": 248.763912123986
+    },
+    "depth_only": {
+      "picked": true,
+      "success": true,
+      "mod_m": 2.0762161848470555,
+      "u": 252.0,
+      "v": 180.0
+    },
+    "openlander": {
+      "picked": true,
+      "success": true,
+      "mod_m": 4.003696442618694,
+      "u": 422.27127659574467,
+      "v": 17.39627659574468
+    }
+  },
+  "scan_alt": 12.0,
+  "footprint_m": 1.0
+}

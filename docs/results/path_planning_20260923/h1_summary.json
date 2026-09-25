@@ -1,0 +1,47 @@
+{
+  "record_count": 163,
+  "status_counts": {
+    "NO_SENSOR": 2,
+    "OK": 159,
+    "NO_PATH": 1,
+    "RECOVERY_YAW": 1
+  },
+  "horizon": 1,
+  "turning_plan_count": 6,
+  "turning_fraction": 0.03773584905660377,
+  "recovery_yaw_count": 1,
+  "plan_ms_median": 14.272,
+  "plan_ms_p95": 20.087,
+  "plan_ms_max": 21.549,
+  "minimum_observed_clearance_m": 1.509,
+  "logged_route_length_m": 337.06720309757924,
+  "net_progress_m": 261.22589466781426,
+  "start_position": [
+    -150.0,
+    0.0,
+    22.0
+  ],
+  "end_position": [
+    53.482,
+    163.811,
+    22.0
+  ],
+  "selected_steering_sequences": {
+    "(0.0,)": 153,
+    "(20.0,)": 2,
+    "(40.0,)": 2,
+    "(-40.0,)": 1,
+    "(-20.0,)": 1
+  },
+  "trajectory_audit": {
+    "explicit_obstacle_count": 17,
+    "trajectory_sample_count": 3477,
+    "minimum_surface_clearance_m": 1.7280415233269715,
+    "nearest_obstacle": "t_side1_l",
+    "drone_radius_m": 0.36,
+    "collision_sample_count": 0,
+    "collision_free": true
+  },
+  "goal_distance_m": 195.04171001352506,
+  "near_goal_10m": false
+}

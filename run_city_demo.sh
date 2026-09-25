@@ -11,10 +11,15 @@ MODE="${2:-demo}"
 export GAZEBO_MODEL_DATABASE_URI="http://127.0.0.1:9"
 export GAZEBO_MODEL_PATH="$HOME/.gazebo/models:${GAZEBO_MODEL_PATH:-}"
 mkdir -p "$SL/logs" "$SL/frames" "$SL/worlds/generated"
+export GAZEBO_LOG_PATH="${GAZEBO_LOG_PATH:-$SL/logs/gazebo}"
+mkdir -p "$GAZEBO_LOG_PATH"
 TS=$(date +%Y%m%d_%H%M%S)
 LOG="$SL/logs/city_$TS.log"
 WORLD="$SL/worlds/generated/metropolis_seed${SEED}.world"
 export WAYPOINTS_FILE="$SL/worlds/generated/metropolis_seed${SEED}.waypoints.json"
+export LOCAL_PLANNER_MODE="${LOCAL_PLANNER_MODE:-multistep}"
+export LOCAL_PLANNER_HORIZON="${LOCAL_PLANNER_HORIZON:-2}"
+export LOCAL_PLANNER_LOG="${LOCAL_PLANNER_LOG:-$SL/logs/planner_$TS.jsonl}"
 export FRAMES_DIR="$SL/frames/city_$TS"
 mkdir -p "$FRAMES_DIR"
 python3 "$SL/worlds/generate_metropolis.py" --seed "$SEED" --out "$WORLD" | tee "$LOG"
@@ -24,16 +29,31 @@ PIDS=()
 cleanup() { if ((${#PIDS[@]})); then kill "${PIDS[@]}" 2>/dev/null || true; fi; }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
-if pgrep -x gzserver >/dev/null; then
-  echo "Gazebo 서버가 이미 실행 중입니다. 기존 서버를 종료하거나 다른 GAZEBO_MASTER_URI / ROS_DOMAIN_ID를 지정하세요."
-  if [[ -z "${GAZEBO_MASTER_URI:-}" ]]; then exit 1; fi
+# Check the selected master port, not unrelated validation servers on other ports.
+export GAZEBO_MASTER_URI="${GAZEBO_MASTER_URI:-http://127.0.0.1:11345}"
+if python3 - "$GAZEBO_MASTER_URI" <<'PROBE'
+import socket
+import sys
+from urllib.parse import urlparse
+uri = urlparse(sys.argv[1])
+try:
+    with socket.create_connection((uri.hostname or "127.0.0.1", uri.port or 11345), timeout=.5):
+        pass
+except OSError:
+    sys.exit(1)
+PROBE
+then
+  echo "Gazebo master가 이미 실행 중입니다: $GAZEBO_MASTER_URI"
+  echo "기존 창을 종료하거나 다른 GAZEBO_MASTER_URI / ROS_DOMAIN_ID를 지정하세요."
+  exit 1
 fi
+
 gazebo --verbose -s libgazebo_ros_init.so -s libgazebo_ros_factory.so "$WORLD" >> "$LOG" 2>&1 &
 PIDS+=("$!")
 echo "도시 미리보기: $WORLD"
 echo "로그: $LOG"
 if [[ "$MODE" == world ]]; then
-  echo "환경만 실행합니다. 도심 → 물류·공장지대 → 주거 타운, 수변과 목적지 12곳."
+  echo "환경만 실행합니다. 도심 · 공장 · 강 · 고가도로 · 산동네, 목적지 22곳."
   wait "${PIDS[0]}"
   exit
 fi
@@ -50,6 +70,7 @@ if [[ "$MODE" != norviz ]]; then
   rviz2 -d "$SL/demo.rviz" >> "$LOG" 2>&1 &
   PIDS+=("$!")
 fi
-echo "기본 미션: 도심 대로 (-150, 0) → East Gate (150, 0). 종료: Ctrl+C"
+echo "기본 미션: 물류창고 (-210, -88) → 도심 대로 → East Gate (150, 0). 종료: Ctrl+C"
+echo "지역 경로 계획: mode=$LOCAL_PLANNER_MODE horizon=$LOCAL_PLANNER_HORIZON 로그=$LOCAL_PLANNER_LOG"
 echo "목적지 좌표와 구역 정보: $WAYPOINTS_FILE"
 wait

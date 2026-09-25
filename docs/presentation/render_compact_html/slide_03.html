@@ -1,0 +1,48 @@
+<!doctype html><html lang='ko'><head><meta charset='utf-8'><style>
+:root{--navy:#071a68;--blue:#0a4ea1;--sky:#eaf3ff;--line:#d5dbe5;--ink:#111827;--muted:#5f6570;--green:#18883b;--red:#c71920;--orange:#df7200}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#dfe3ea;font-family:"Malgun Gothic","Noto Sans KR",Arial,sans-serif;color:var(--ink)}
+.deck{display:flex;flex-direction:column;align-items:center;gap:34px;padding:34px 0 80px}
+.slide{position:relative;width:1600px;height:900px;background:#fff;border:10px solid var(--navy);overflow:hidden;padding:24px 42px 30px}
+.head{height:122px;padding-left:125px;position:relative}.num{position:absolute;left:-30px;top:-10px;width:110px;height:110px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-size:52px;font-weight:900}
+.eyebrow{font-size:16px;color:#777;margin:2px 0 8px}.title{font-size:43px;line-height:1.08;font-weight:900;letter-spacing:-1.8px}.sub{font-size:18px;color:var(--blue);margin-top:5px}
+.body{height:700px;padding-top:8px}.statement{background:#f3f3f3;box-shadow:4px 5px 6px #bbb;padding:13px 25px;font-size:21px;font-weight:800;text-align:center;margin:4px 0 20px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:26px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.section{font-size:23px;font-weight:900;color:var(--navy);padding-bottom:8px;border-bottom:2px solid #eceff3;margin:10px 0 12px}.section.red{color:var(--red)}
+.box{border:1px solid var(--line);border-radius:4px;padding:15px 18px;background:#fff}.box.blue{border-left:6px solid var(--blue);background:#f5f9ff}.box.green{border-left:6px solid var(--green);background:#f2fbf4}.box.red{border-left:6px solid var(--red);background:#fff5f5}.box.gray{background:#f5f6f8}
+.box h3{font-size:20px;color:var(--navy);margin:0 0 8px}.box p,.box li{font-size:17px;line-height:1.52;margin:3px 0}.box ul{margin:5px 0 0;padding-left:22px}
+.bullets{margin:3px 0;padding-left:24px}.bullets li{font-size:18px;line-height:1.58;margin:3px 0}
+.accent{color:var(--blue);font-weight:900}.good{color:var(--green);font-weight:900}.bad{color:var(--red);font-weight:900}.warn{color:var(--orange);font-weight:900}.mono{font-family:Consolas,monospace;font-size:.9em}
+.flow{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;align-items:stretch}.step{position:relative;border:2px solid #93afd6;border-radius:5px;background:#f8fbff;padding:13px 8px;text-align:center;min-height:107px}.step:not(:last-child):after{content:"›";position:absolute;right:-11px;top:30px;color:var(--blue);font-size:30px;font-weight:900;z-index:2}.step .n{font-size:13px;font-weight:900;color:var(--blue)}.step .t{font-size:18px;font-weight:900;margin:7px 0 3px}.step .d{font-size:14px;color:var(--muted);line-height:1.35}
+.pipe{display:grid;grid-template-columns:1fr 42px 1fr 42px 1fr 42px 1fr;align-items:center;gap:5px}.node{border:2px solid var(--blue);border-radius:7px;padding:14px;text-align:center;font-weight:900;font-size:18px;background:#f8fbff;min-height:94px}.node small{display:block;font-weight:400;color:var(--muted);font-size:14px;line-height:1.35;margin-top:7px}.arrow{text-align:center;font-size:33px;color:var(--blue);font-weight:900}
+.tagrow{display:flex;flex-wrap:wrap;gap:8px}.tag{padding:7px 11px;border-radius:4px;background:var(--navy);color:#fff;font-size:14px;font-weight:800}.tag.light{background:#e8f1ff;color:var(--blue);border:1px solid #a8c3e9}
+.metricrow{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.metric{background:#f2f5f9;border-top:6px solid var(--blue);padding:13px 14px;min-height:105px}.metric b{display:block;font-size:24px;color:var(--navy);margin-bottom:4px}.metric span{font-size:14px;line-height:1.35;color:var(--muted)}
+.table{width:100%;border-collapse:collapse;font-size:16px}.table th{background:var(--navy);color:#fff;text-align:left;padding:10px 12px}.table td{border:1px solid var(--line);padding:9px 12px;line-height:1.35}.table tr:nth-child(even) td{background:#f7f8fa}
+.figure{border:1px solid var(--line);background:#f7f7f7;overflow:hidden}.figure img{display:block;width:100%;height:100%;object-fit:cover}.cap{font-size:14px;font-weight:700;padding:7px 10px;background:#fff;color:#202b3c}
+.photo4{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:245px 245px;gap:12px}.photo4 .figure{display:grid;grid-template-rows:1fr auto}
+.algo{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.algo .box{padding:12px;min-height:105px}.algo h3{font-size:17px}.algo p{font-size:14px;line-height:1.35}
+.statusline{display:flex;align-items:center;justify-content:space-between;margin:3px 0 17px}.state{flex:1;text-align:center;padding:12px 4px;border:2px solid #95afd0;border-radius:22px;margin:0 4px;font-size:14px;font-weight:900;color:var(--navy)}.state.active{border-color:#e39a35;background:#fff5e6}.state.done{border-color:#5da76d;background:#effaf1}
+.dash{display:grid;grid-template-columns:1.05fr 1.8fr 1fr;grid-template-rows:250px 72px;gap:9px}.dash>div{border:2px solid var(--navy);padding:13px;background:#f8fafc}.dash h3{font-size:18px;color:var(--navy);margin:0 0 8px}.dash p{font-size:14px;line-height:1.45;margin:3px 0}.controls{grid-column:1/4!important;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;border:none!important;padding:0!important;background:#fff!important}.controls span{display:flex;align-items:center;justify-content:center;background:var(--navy);color:#fff;font-weight:900}
+.road{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.road .box{min-height:170px;border-top:7px solid var(--blue)}.road .k{font-size:13px;color:var(--blue);font-weight:900}.road h3{font-size:19px;margin-top:8px}.road p{font-size:15px}
+.note{font-size:14px;color:var(--muted);line-height:1.45}.footer{position:absolute;right:34px;bottom:13px;font-size:12px;color:#a0a5ad}
+.nav{position:fixed;right:24px;bottom:22px;display:flex;gap:8px;z-index:20}.nav button{border:0;background:var(--navy);color:white;border-radius:5px;padding:10px 15px;font-size:15px;cursor:pointer;box-shadow:0 2px 8px #777}
+.cover{padding:0;background:var(--navy);border-color:var(--navy);color:#fff}.cover-inner{height:100%;position:relative;padding:175px 150px}.cover-kicker{font-size:18px;letter-spacing:4px;color:#9fc5ff;font-weight:700;margin-bottom:35px}.cover-title{font-size:78px;line-height:1;font-weight:900;letter-spacing:-3px;margin-bottom:32px}.cover-line{width:110px;height:6px;background:#78b1ff;margin-bottom:38px}.cover-project{font-size:31px;line-height:1.4;color:#dceaff;font-weight:700}.cover-name{position:absolute;left:150px;bottom:120px;font-size:29px;font-weight:700}.cover-meta{position:absolute;right:150px;bottom:125px;text-align:right;color:#9fc5ff;font-size:17px;line-height:1.7}.cover-orb{position:absolute;border-radius:50%;background:#0a3985}.cover-orb.one{width:360px;height:360px;right:115px;top:80px}.cover-orb.two{width:230px;height:230px;right:390px;bottom:85px;background:#0b4a91}
+@media print{body{background:#fff}.deck{padding:0;gap:0}.slide{break-after:page}.nav{display:none}}
+html,body{width:1600px!important;height:900px!important;overflow:hidden!important;background:#fff!important}.deck{padding:0!important;gap:0!important}.slide{margin:0!important}.nav{display:none!important}</style></head><body><div class='deck'><section class="slide" id="slide-2"><header class="head"><div class="num">02</div><div class="title" style="padding-top:8px">기술 스택과 전체 구조</div><div class="sub">착륙 판단과 이동 제어를 분리하고 ROS 2 토픽으로 연결</div></header><main class="body">
+<div class="tagrow" style="margin-bottom:15px"><span class="tag">ROS 2 Humble</span><span class="tag">Gazebo Classic 11</span><span class="tag">Python</span><span class="tag">PyTorch</span><span class="tag">DINOv2 ViT-S/14</span><span class="tag">NumPy · Pillow</span><span class="tag">RViz2</span><span class="tag">SDF · COLLADA</span></div>
+<div class="pipe">
+  <div class="node">Gazebo 센서<small>하강 RGB·거리 영상<br>전방 거리 · 위치 정보</small></div><div class="arrow">→</div>
+  <div class="node">착륙점 판단 노드<small>DINO 특징 + depth<br>후보·최종 착륙점</small></div><div class="arrow">→</div>
+  <div class="node">미션 제어 노드<small>상태머신 · 이동 회피<br>하강 중 재정렬</small></div><div class="arrow">→</div>
+  <div class="node">Gazebo · RViz<small>드론 이동<br>판단 영역 · 후보 · 궤적</small></div>
+</div>
+<div class="grid3" style="margin-top:18px">
+  <div class="box blue"><h3>착륙 판단 입력</h3><p>하강 카메라 RGB 영상<br>하강 카메라 거리 영상<br>Gazebo의 드론 위치·자세</p></div>
+  <div class="box green"><h3>주요 출력</h3><p>최종 안전 착륙점<br>안전 영역·장애물·후보점 시각화</p></div>
+  <div class="box gray"><h3>현재 제어 방식</h3><p>Gazebo에서 드론 위치 확인<br>시뮬레이터 내부 위치를 직접 갱신</p></div>
+</div>
+<div class="statement" style="margin-top:18px;box-shadow:none;border:1px solid var(--line)"><span class="accent">현재 정확한 표현:</span> RGB-D 기반 장애물 판단과 안전 착륙점 선택 시뮬레이션</div>
+<div class="grid3" style="margin-top:11px">
+  <div class="box green" style="padding:10px 15px"><h3 style="font-size:17px">비전을 사용하는 판단</h3><p style="font-size:14px">착륙 장애물·후보·선택점, 전방 거리 기반 회피</p></div>
+  <div class="box red" style="padding:10px 15px"><h3 style="font-size:17px">현재 비전이 아닌 부분</h3><p style="font-size:14px">자기 위치는 Gazebo 제공값 사용, 카메라 기반 위치 추정 미구현</p></div>
+  <div class="box gray" style="padding:10px 15px"><h3 style="font-size:17px">현재 실기체가 아닌 부분</h3><p style="font-size:14px">실제 비행제어기·동역학·기체 연동은 범위 밖</p></div>
+</div></main><div class="footer">RGB-D DELIVERY DRONE · 2026.09.16</div></section></div></body></html>

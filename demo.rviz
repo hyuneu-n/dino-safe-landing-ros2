@@ -57,6 +57,28 @@ Visualization Manager:
       Enabled: true
       Topic:
         Value: /landing/target_marker
+    - Class: rviz_default_plugins/Map
+      Name: LocalCostmap
+      Enabled: true
+      Topic:
+        Value: /planning/local_costmap
+      Color Scheme: costmap
+      Alpha: 0.65
+    - Class: rviz_default_plugins/MarkerArray
+      Name: PlanningCandidates
+      Enabled: true
+      Topic:
+        Value: /planning/candidates
+      Namespaces:
+        {}
+    - Class: rviz_default_plugins/Path
+      Name: SelectedLocalPath
+      Enabled: true
+      Topic:
+        Value: /planning/selected_path
+      Line Style: Lines
+      Line Width: 0.12
+      Color: 30; 240; 80
     - Class: rviz_default_plugins/Image
       Name: SafeLandingOverlay
       Enabled: true

@@ -40,7 +40,10 @@ FX = (IMG_W / 2.0) / math.tan(1.396 / 2.0)         # ≈ 382
 FY = FX
 CX, CY = IMG_W / 2.0, IMG_H / 2.0
 GROUND_Z = 0.0
-TARGET_XY = np.array([150.0, 0.0])                  # GPS 거친 목적지 (기본값 — self.target_xy 초기값)
+TARGET_XY = np.array([                              # GPS 거친 목적지 (환경변수로 데모 목적지 주입)
+    float(os.environ.get("LANDING_TARGET_X", "150.0")),
+    float(os.environ.get("LANDING_TARGET_Y", "0.0")),
+])
 DRONE_FOOTPRINT_M = 1.0                            # 안착 반경 여유 (m)
 OBSTACLE_DEPTH_MARGIN = 0.45                       # 지면거리보다 이만큼 가까우면 솟은 장애물
 GROUND_COLOR_THRESH = 70.0                         # 주 착륙표면 색과의 거리 (0~441) — 넘으면 제외
@@ -323,8 +326,14 @@ def main():
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
+    except Exception:
+        # Automated demo teardown can invalidate the ROS context while a timer
+        # callback is publishing. Ignore that specific shutdown race only.
+        if rclpy.ok():
+            raise
     node.destroy_node()
-    rclpy.shutdown()
+    if rclpy.ok():
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":

@@ -58,16 +58,16 @@
   {
     "id": "residential_lane",
     "finite_fraction": 1.0,
-    "depth_p99_p01": 1.9050426483154297,
+    "depth_p99_p01": 1.9100408554077148,
     "depth_min": 10.004981994628906,
-    "depth_max": 11.910028457641602
+    "depth_max": 11.915027618408203
   },
   {
     "id": "garden_edge",
     "finite_fraction": 1.0,
-    "depth_p99_p01": 3.369617462158203,
+    "depth_p99_p01": 3.374614715576172,
     "depth_min": 8.112445831298828,
-    "depth_max": 11.910029411315918
+    "depth_max": 11.915027618408203
   },
   {
     "id": "construction",
@@ -82,5 +82,75 @@
     "depth_p99_p01": 3.6963233947753906,
     "depth_min": 7.663231372833252,
     "depth_max": 11.780029296875
+  },
+  {
+    "id": "bridge_turnout",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 35.31875228881836,
+    "depth_min": 10.479981422424316,
+    "depth_max": 45.914913177490234
+  },
+  {
+    "id": "under_bridge",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 1.3188676834106445,
+    "depth_min": 10.479981422424316,
+    "depth_max": 11.915027618408203
+  },
+  {
+    "id": "old_town_square",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 1.3498468399047852,
+    "depth_min": 10.479981422424316,
+    "depth_max": 11.959999084472656
+  },
+  {
+    "id": "south_river_park",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 1.318868637084961,
+    "depth_min": 10.479982376098633,
+    "depth_max": 11.915027618408203
+  },
+  {
+    "id": "launch_depot",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 1.1438665390014648,
+    "depth_min": 10.479981422424316,
+    "depth_max": 11.740026473999023
+  },
+  {
+    "id": "mcdonalds_delivery",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 3.0200185775756836,
+    "depth_min": 8.631911277770996,
+    "depth_max": 11.914993286132812
+  },
+  {
+    "id": "subway_delivery",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 4.729620456695557,
+    "depth_min": 5.779987812042236,
+    "depth_max": 11.830028533935547
+  },
+  {
+    "id": "campus_delivery",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 1.2238683700561523,
+    "depth_min": 10.47998046875,
+    "depth_max": 11.820026397705078
+  },
+  {
+    "id": "hill_court",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 1.6537246704101562,
+    "depth_min": 10.479981422424316,
+    "depth_max": 12.369468688964844
+  },
+  {
+    "id": "ridge_lookout",
+    "finite_fraction": 1.0,
+    "depth_p99_p01": 1.6045713424682617,
+    "depth_min": 10.479981422424316,
+    "depth_max": 12.273351669311523
   }
 ]
